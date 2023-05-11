@@ -112,7 +112,7 @@ class RobustMPC(MPC):
         lmi_constraint_1 = cp.bmat([
             [lmi_a, lmi_b],
             [lmi_b.T, lmi_c]
-        ]) <= 0
+        ]) << 0
 
         # Second LMI constraint
         cost_matrix = full_b.T @ full_c.T @ full_state_cost @ full_c @ full_b + full_action_cost
@@ -135,7 +135,7 @@ class RobustMPC(MPC):
         lmi_constraint_2 = cp.bmat([
             [lmi_a, lmi_b],
             [lmi_b.T, lmi_c]
-        ]) <= 0
+        ]) << 0
 
         constraint_lambda = (lambda_var >= 0)
         objective = gamma_1 + gamma_2
@@ -182,5 +182,6 @@ class RobustMPC(MPC):
             parameters={"initial_state": x_par,
                         "reference_sequence": r_par,
                         "state_disturbance": w_par},
-            variables={"actions": full_actions.value}
+            variables={"actions": full_actions,
+                       "lambda": lambda_var}
         )
