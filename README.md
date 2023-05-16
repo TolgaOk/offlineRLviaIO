@@ -25,5 +25,5 @@ Each experiment directory contains jupyter-notebooks for the corresponding exper
 
 - Figure 1-a
 <p float="left">
-  <img src="figures/fig1_a.png" width="45%" />
+  <img src="figures/fig1_b.png" width="45%" />
 </p>
