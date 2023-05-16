@@ -61,6 +61,7 @@ class ControlLoop():
         if initial_state is None:
             initial_state, _ = self.plant.reset()
 
+        self.controller.reset()
         state = initial_state
         done = False
         step = 0
@@ -75,8 +76,8 @@ class ControlLoop():
                 )
             else:
                 action, min_cost = self.controller.compute(
-                    initial_state=state,
-                    reference_sequence = self.plant.reference_sequence[:, step: step + self.controller.horizon],
+                    state,
+                    self.plant.reference_sequence[:, step: step + self.controller.horizon],
                 )
             action = np.clip(action,
                              self.plant.action_space.low,

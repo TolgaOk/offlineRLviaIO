@@ -79,6 +79,9 @@ class MPC():
 
         result = self.optimizer.problem.solve(solver=cp.MOSEK)
         return self.optimizer.variables["actions"].value[:, 0], result
+    
+    def reset(self) -> None:
+        pass
 
     def prepare_optimizer(self) -> Optimizer:
         """ Prepare a parametric optimization problem for the mpc agent

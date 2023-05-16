@@ -169,8 +169,7 @@ class RobustMPC(MPC):
 
             if self.soften_state_constraints:
                 slack = cp.Variable(full_state_constraint_vector.shape[0])
-                pen = self.softening_penalty
-                objective += pen * cp.norm(slack, 2)**2
+                objective += self.softening_penalty * cp.norm(slack, 2)**2
             else:
                 slack = np.zeros(full_state_constraint_vector.shape)
             constraints.append(full_state_constraint_matrix @ (full_a @ x_par + full_b @
