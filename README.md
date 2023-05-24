@@ -13,17 +13,8 @@ pip install -e .
 - - -
 ## Examples
 
-There are several example files included in the `examples/` folder, which you can run:
+You can run the example notebook:
 
-- `examples/fighter/*` : experiments of Sections 4.1 and B.1 (Appendix)
-- `examples/dualheater/*` : experiments of Sections 4.2 and B.2 (Appendix)
+- `examples/fighter/*` : experiments of Sections 4
 
-
-Each experiment directory contains jupyter-notebooks for the corresponding experiments. You can visualize the results within the notebooks.
-- - -
-## Figures
-
-- Figure 1-a
-<p float="left">
-  <img src="figures/fig1_b.png" width="45%" />
-</p>
+The experiment directory contains the jupyter-notebook for the corresponding experiment. You can visualize the results within the notebooks.
