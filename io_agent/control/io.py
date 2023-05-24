@@ -10,6 +10,7 @@ from io_agent.plant.base import LinearEnvParams
 from io_agent.control.mpc import Optimizer
 from io_agent.utils import FeatureHandler, AugmentedTransition
 from io_agent.trainer import Transition
+from io_agent.control.mpc import MPC
 
 
 class IOController():
@@ -17,13 +18,14 @@ class IOController():
 
     Args:
         env_params (LinearEnvParams): Linear environment parameters
-        horizon (int): MPC horizon
+        dataset_length (int): MPC dataset_length
     """
 
     def __init__(self,
                  env_params: LinearEnvParams,
-                 horizon: int,
+                 dataset_length: int,
                  feature_handler: FeatureHandler,
+                 expert_agent: MPC,
                  include_constraints: bool = True,
                  action_constraints_flag: bool = True,
                  state_constraints_flag: bool = True,
@@ -31,13 +33,15 @@ class IOController():
                  softening_penalty: float = 1e9,
                  ) -> None:
         self.feature_handler = feature_handler
+        self.expert_agent = expert_agent
         self.include_constraints = include_constraints
         self.action_constraints_flag = action_constraints_flag
         self.state_constraints_flag = state_constraints_flag
         self.soften_state_constraints = soften_state_constraints
         self.softening_penalty = softening_penalty
-        self.horizon = horizon
+        self.dataset_length = dataset_length
         self.env_params = env_params
+        self.horizon = None # For compatibility with the ControlLoop class 
 
         self.polytope_size = (
             env_params.action_constraint_vector.shape[0] * int(action_constraints_flag)
@@ -95,6 +99,7 @@ class IOController():
             constraint_matrix = cp.Parameter((self.polytope_size, self.action_size))
             constraint_vector = cp.Parameter((self.polytope_size,))
 
+        
         objective = (
             cp.quad_form(action, (self._q_theta_uu + self._q_theta_uu.T) / 2)
             + 2 * cp.sum(cp.multiply(state, self._q_theta_su @ action))
@@ -176,22 +181,22 @@ class IOController():
         self._q_theta_uu = self.train_optimizer.variables["q_theta_uu"].value
 
     def prepare_train_optimizer(self) -> Optimizer:
-        states = cp.Parameter((self.aug_state_size, self.horizon))
-        actions = cp.Parameter((self.action_size, self.horizon))
-        gamma_var = cp.Variable((1, self.horizon))
+        states = cp.Parameter((self.aug_state_size, self.dataset_length))
+        actions = cp.Parameter((self.action_size, self.dataset_length))
+        gamma_var = cp.Variable((1, self.dataset_length))
 
         if self.include_constraints:
             constraint_matrices = [cp.Parameter(
-                (self.polytope_size, self.action_size)) for _ in range(self.horizon)]
-            constraint_vector = cp.Parameter((self.polytope_size, self.horizon))
-            lambda_var = cp.Variable((self.polytope_size, self.horizon))
+                (self.polytope_size, self.action_size)) for _ in range(self.dataset_length)]
+            constraint_vector = cp.Parameter((self.polytope_size, self.dataset_length))
+            lambda_var = cp.Variable((self.polytope_size, self.dataset_length))
 
         q_theta_su = cp.Variable((self.aug_state_size, self.action_size))
         q_theta_uu = cp.Variable((self.action_size, self.action_size))
 
         objective = (cp.sum(gamma_var) / 4
-                     + cp.trace(actions.T @ q_theta_uu @ actions)
-                     + 2 * cp.trace(states.T @ q_theta_su @ actions))
+                     + cp.sum(cp.multiply(actions, q_theta_uu @ actions))
+                     + 2 * cp.sum(cp.multiply(states, q_theta_su @ actions)))
         constraints = [q_theta_uu >> np.eye(self.action_size)]
 
         if self.include_constraints:
@@ -199,7 +204,7 @@ class IOController():
             constraints.append(lambda_var >= 0)
 
         q_theta_su_mul_state = q_theta_su.T @ states
-        for step in range(self.horizon):
+        for step in range(self.dataset_length):
 
             if self.include_constraints:
                 lmi_b = cp.reshape(
@@ -238,6 +243,15 @@ class IOController():
             }
         )
 
+    def _get_expert_action(self, state: np.ndarray, noise_sequence: np.ndarray) -> np.ndarray:
+        action, _ = self.expert_agent.compute(
+            initial_state=state,
+            reference_sequence=np.zeros((self.expert_agent.output_size, self.expert_agent.horizon)),
+            output_disturbance=np.zeros((self.expert_agent.output_size, self.expert_agent.horizon)),
+            state_disturbance=noise_sequence
+                                  )
+        return action
+
     def augment_dataset(self, trajectories: List[List[Transition]]) -> List[AugmentedTransition]:
         all_transitions = []
         for traj_index, trajectory in enumerate(trajectories):
@@ -249,11 +263,15 @@ class IOController():
                     action=transition.action,
                     history=history)
                 if tran_index >= self.feature_handler.n_past:
+                    expert_action = self._get_expert_action(
+                        transition.state,
+                        noise_sequence=history["noise"][1:1+self.expert_agent.horizon][::-1, :].T
+                    )
                     all_transitions.append(
                         AugmentedTransition(
                             aug_state=self.feature_handler.augment_state(
                                 state=transition.state, history=history),
-                            expert_action=transition.action,
+                            expert_action=expert_action,
                             **asdict(transition)
                         )
                     )

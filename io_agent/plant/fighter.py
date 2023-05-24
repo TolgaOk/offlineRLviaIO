@@ -59,7 +59,11 @@ class FighterEnv(Plant):
 
     metadata = {"render_modes": []}
 
-    def __init__(self, max_length: int, env_params: LinearEnvParams) -> None:
+    def __init__(self,
+                  max_length: int,
+                  env_params: LinearEnvParams,
+                  disturbance_bias: Optional[np.ndarray]
+                  ) -> None:
         self.observation_space = spaces.Box(-np.inf, np.inf, shape=(6,), dtype=float)
         self.action_space = spaces.Box(-np.inf, np.inf, shape=(2,), dtype=float)
 
@@ -72,6 +76,8 @@ class FighterEnv(Plant):
         self.state = None
         self.iteration = None
         self.state_disturbance = self._generate_state_disturbance()
+        if disturbance_bias is not None:
+            self.state_disturbance += disturbance_bias
         self.output_disturbance = np.zeros(
             (self.observation_space.shape[0], self.max_length * 2 + 1))
         self.action_disturbance = np.zeros((self.action_space.shape[0], self.max_length * 2))
@@ -85,10 +91,10 @@ class FighterEnv(Plant):
             np.ndarray: Noise signal of shape (2, L) 
                 where L denotes the environment length
         """
-        return np.array([
-            0.5 * np.sin(np.linspace(0, 2*np.pi, self.max_length * 2) + np.pi/2 * np.random.rand()),
-            0.01 * np.ones(self.max_length * 2)
-        ]) + self.sigma_v @ np.random.randn(2, self.max_length * 2)
+        return np.stack([
+            0.5 * np.sin(np.linspace(0, 6*np.pi, self.max_length * 2) + np.pi/2 * np.random.rand()),
+            0.01 * np.ones(self.max_length * 2)],
+          axis=0) + self.sigma_v @ np.random.randn(2, self.max_length * 2)
 
     def _measure(self) -> np.ndarray:
         """ Step output of the plant

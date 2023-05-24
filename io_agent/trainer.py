@@ -60,6 +60,7 @@ class ControlLoop():
 
         if initial_state is None:
             initial_state, _ = self.plant.reset()
+        horizon = self.controller.horizon if self.controller.horizon is not None else 0
 
         self.controller.reset()
         state = initial_state
@@ -69,15 +70,14 @@ class ControlLoop():
             if use_foresight:
                 action, min_cost = self.controller.compute(
                     initial_state=state,
-                    reference_sequence = self.plant.reference_sequence[:, step: step + self.controller.horizon],
-                    output_disturbance=self.output_disturbance[:, step: step +
-                                                               self.controller.horizon],
-                    state_disturbance=self.state_disturbance[:, step: step + self.controller.horizon],
+                    reference_sequence = self.plant.reference_sequence[:, step: step + horizon],
+                    output_disturbance=self.output_disturbance[:, step: step + horizon],
+                    state_disturbance=self.state_disturbance[:, step: step + horizon],
                 )
             else:
                 action, min_cost = self.controller.compute(
                     state,
-                    self.plant.reference_sequence[:, step: step + self.controller.horizon],
+                    self.plant.reference_sequence[:, step: step + horizon],
                 )
             action = np.clip(action,
                              self.plant.action_space.low,

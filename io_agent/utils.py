@@ -17,6 +17,7 @@ class AugmentedTransition(Transition):
     expert_action: np.ndarray
     constraint_matrix: Optional[np.ndarray] = None
     constraint_vector: Optional[np.ndarray] = None
+    hindsight_weight: Optional[np.ndarray] = None
 
 
 class FeatureHandler():
@@ -24,14 +25,19 @@ class FeatureHandler():
     def __init__(self,
                  env_params: LinearEnvParams,
                  n_past: int,
+                 n_accumulate: int,
                  add_bias: bool,
                  use_state_regressor: bool,
                  use_action_regressor: bool,
                  use_noise_regressor: bool,
                  ) -> None:
+        
+        if n_accumulate < n_past:
+            raise ValueError("The argument n_accumulate must be larger than or equal to the argument n_past")
 
         self.env_params = env_params
         self.n_past = n_past
+        self.n_accumulate = n_accumulate
         self.add_bias = add_bias
         self.use_state_regressor = use_state_regressor
         self.use_action_regressor = use_action_regressor
@@ -54,9 +60,9 @@ class FeatureHandler():
 
     def reset_history(self) -> Dict[str, np.ndarray]:
         return dict(
-            noise=np.zeros((self.n_past, self.noise_size)),
-            state=np.zeros((self.n_past, self.state_size)),
-            action=np.zeros((self.n_past, self.action_size)),
+            noise=np.zeros((self.n_accumulate, self.noise_size)),
+            state=np.zeros((self.n_accumulate, self.state_size)),
+            action=np.zeros((self.n_accumulate, self.action_size)),
         )
 
     def infer_noise(self,
@@ -80,15 +86,17 @@ class FeatureHandler():
             history[name][0] = new_vector
         self._noise = self.infer_noise(
             state=state,
-             next_state=next_state,
-             action=action)
+            next_state=next_state,
+            action=action)
         return history
 
     def augment_state(self, state: np.ndarray, history: Dict[str, np.ndarray]) -> np.ndarray:
         features = []
-        for name, condition in (("noise", self.use_noise_regressor), ("state", self.use_state_regressor), ("action", self.use_action_regressor)):
+        for name, condition in (("noise", self.use_noise_regressor),
+                                ("state", self.use_state_regressor),
+                                ("action", self.use_action_regressor)):
             if condition:
-                features.append(history[name].flatten())
+                features.append(history[name][:self.n_past].flatten())
         if self.add_bias:
             features.append(np.ones((1,)))
         return np.concatenate([state, *features])
