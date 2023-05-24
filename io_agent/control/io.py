@@ -63,6 +63,24 @@ class IOController():
                 state: np.ndarray,
                 reference: np.ndarray,
                 ) -> Tuple[Union[np.ndarray, float]]:
+        """ Compute the optimal action and total cost given the state
+
+        Args:
+            state (np.ndarray): State array of shape (S,)
+                where S denotes the output/state space size
+            reference (np.ndarray): Reference signal array to follow of shape (S, T)
+                where L denotes the environment length
+
+        Raises:
+            RuntimeError: If the optimization is failed
+
+        Returns:
+            Tuple[Union[np.ndarray, float]]:
+                - Optimal action vector (if possible) of shape (A,) at the initial time
+                    step where A denotes the action space size or None if the solver
+                    cannot solve the problem.
+                - Total cost of the MPC problem (float)
+        """
         if self._q_theta_su is None or self._q_theta_uu is None:
             return np.zeros((self.action_size,))
         aug_state = self.feature_handler.augment_state(state, self._history)
@@ -87,11 +105,18 @@ class IOController():
         return self.action_optimizer.variables["action"].value, None
 
     def reset(self) -> None:
+        """ Reset the feature handler
+        """
         self._past_state = None
         self._past_action = None
         self._history = self.feature_handler.reset_history()
 
     def prepare_action_optimizer(self) -> Optimizer:
+        """ Prepare the action generation optimizer that is used in ```compute```
+
+        Returns:
+            Optimizer: Optimization problem, parameters, and variables
+        """
         state = cp.Parameter((self.aug_state_size,))
         action = cp.Variable((self.action_size,))
 
@@ -133,7 +158,18 @@ class IOController():
             }
         )
 
-    def calculate_constraints(self, state) -> None:
+    def calculate_constraints(self, state: np.ndarray) -> Tuple[np.ndarray]:
+        """ Calculate the constraint matrices and vectors for the io agent training 
+
+        Args:
+            state (np.ndarray): State array of shape (S,)
+                where S denotes the output/state space size
+
+        Returns:
+            Tuple[np.ndarray, float]:
+                - constraint_matrix (np.ndarray)
+                - constraint_vector (np.ndarray)
+        """
         constraint_matrices = []
         constraint_vectors = []
         if self.state_constraints_flag:
@@ -152,6 +188,15 @@ class IOController():
         return (constraint_matrix, constraint_vector)
 
     def train(self, dataset: List[AugmentedTransition]) -> None:
+        """ Train the io agent with the given dataset of augmented transitions
+
+        Args:
+            dataset (List[AugmentedTransition]): List of  transitions that includes augmented
+                states
+
+        Raises:
+            RuntimeError: If the optimization is failed
+        """
         augmented_dataset = self.augment_dataset(dataset)
         states = np.stack([transition.aug_state for transition in augmented_dataset], axis=-1)
         actions = np.stack([transition.expert_action for transition in augmented_dataset], axis=-1)
@@ -181,6 +226,11 @@ class IOController():
         self._q_theta_uu = self.train_optimizer.variables["q_theta_uu"].value
 
     def prepare_train_optimizer(self) -> Optimizer:
+        """ Prepare the trainer optimizer
+
+        Returns:
+            Optimizer: Optimization problem, parameters, and variables
+        """
         states = cp.Parameter((self.aug_state_size, self.dataset_length))
         actions = cp.Parameter((self.action_size, self.dataset_length))
         gamma_var = cp.Variable((1, self.dataset_length))
@@ -244,6 +294,18 @@ class IOController():
         )
 
     def _get_expert_action(self, state: np.ndarray, noise_sequence: np.ndarray) -> np.ndarray:
+        """ Compute the expert action using the expert agent
+
+        Args:
+            state (np.ndarray): State array of shape (S,)
+                where S denotes the output/state space size
+            noise_sequence (np.ndarray): State disturbance array of
+                shape (W, T). Where W denotes the length of the state
+                disturbance dimension.
+
+        Returns:
+            np.ndarray: expert action
+        """
         action, _ = self.expert_agent.compute(
             initial_state=state,
             reference_sequence=np.zeros((self.expert_agent.output_size, self.expert_agent.horizon)),
@@ -253,6 +315,15 @@ class IOController():
         return action
 
     def augment_dataset(self, trajectories: List[List[Transition]]) -> List[AugmentedTransition]:
+        """ Prepare the given trajectories by augmenting the states and calculating
+            the expert action.
+
+        Args:
+            trajectories (List[List[Transition]]): List of trajectories that contains transitions
+
+        Returns:
+            List[AugmentedTransition]: List of augmented transitions
+        """
         all_transitions = []
         for traj_index, trajectory in enumerate(trajectories):
             history = self.feature_handler.reset_history()

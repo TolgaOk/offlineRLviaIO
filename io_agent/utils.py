@@ -31,9 +31,24 @@ class FeatureHandler():
                  use_action_regressor: bool,
                  use_noise_regressor: bool,
                  ) -> None:
-        
+        """ Feature Handler for the IO agents
+
+        Args:
+            env_params (LinearEnvParams): Parameters that determines the behavior of the environment.
+            n_past (int): The history length of the augmented states
+            n_accumulate (int): The total length of the history (using for noise inference)
+            add_bias (bool): Add bias to the (state features/augmented state)
+            use_state_regressor (bool): Include past states to the (state features/augmented state)
+            use_action_regressor (bool): Include past actions to the (state features/augmented state)
+            use_noise_regressor (bool): Include past noises to the (state features/augmented state)
+
+        Raises:
+            ValueError: If the history size "n_accumulate" is less than feature history size "n_past"
+        """
+
         if n_accumulate < n_past:
-            raise ValueError("The argument n_accumulate must be larger than or equal to the argument n_past")
+            raise ValueError(
+                "The argument n_accumulate must be larger than or equal to the argument n_past")
 
         self.env_params = env_params
         self.n_past = n_past
@@ -49,7 +64,12 @@ class FeatureHandler():
         self.action_size = env_params.b_matrix.shape[1]
 
     @property
-    def aug_state_size(self):
+    def aug_state_size(self) -> int:
+        """ Compute the augmented state/feature size
+
+        Returns:
+            int: Size of the augmented state/features 
+        """
         return (
             self.state_size
             + int(self.add_bias)
@@ -59,6 +79,11 @@ class FeatureHandler():
         )
 
     def reset_history(self) -> Dict[str, np.ndarray]:
+        """ Reset the history of the state, noise and action lists
+
+        Returns:
+            Dict[str, np.ndarray]: Cleaned history
+        """
         return dict(
             noise=np.zeros((self.n_accumulate, self.noise_size)),
             state=np.zeros((self.n_accumulate, self.state_size)),
@@ -70,6 +95,20 @@ class FeatureHandler():
                     next_state: np.ndarray,
                     action: np.ndarray
                     ) -> np.ndarray:
+        """ Infer the noise from the state transition
+
+        Args:
+            state (np.ndarray): State array of shape (S,) where S denotes the
+                output/state space size
+            next_state (np.ndarray): Next state array of shape (S,) where S 
+                denotes the output/state space size
+            action (np.ndarray): Action array of shape (A,) where A denotes the
+                output/state space size
+
+        Returns:
+            np.ndarray: Inferred noise array of shape (W,) where W denotes
+                the noise size
+        """
         return np.linalg.pinv(self.env_params.e_matrix) @ (
             next_state
             - self.env_params.a_matrix @ state
@@ -81,6 +120,20 @@ class FeatureHandler():
                        action: np.ndarray,
                        history: Dict[str, np.ndarray]
                        ) -> Dict[str, np.ndarray]:
+        """ Update the given history with the transition arrays
+
+        Args:
+            state (np.ndarray): State array of shape (S,) where S denotes the
+                output/state space size
+            next_state (np.ndarray): Next state array of shape (S,) where S 
+                denotes the output/state space size
+            action (np.ndarray): Action array of shape (A,) where A denotes the
+                output/state space size
+            history (Dict[str, np.ndarray]): History dictionary
+
+        Returns:
+            Dict[str, np.ndarray]: Updated history
+        """
         for name, new_vector in (("noise", self._noise), ("state", state), ("action", action)):
             history[name][1:] = history[name][:-1]
             history[name][0] = new_vector
@@ -91,6 +144,16 @@ class FeatureHandler():
         return history
 
     def augment_state(self, state: np.ndarray, history: Dict[str, np.ndarray]) -> np.ndarray:
+        """ Augment the state using the given history
+
+        Args:
+            state (np.ndarray): State array of shape (S,) where S denotes the
+                output/state space size
+            history (Dict[str, np.ndarray]): History dictionary
+
+        Returns:
+            np.ndarray: Augmented state/features
+        """
         features = []
         for name, condition in (("noise", self.use_noise_regressor),
                                 ("state", self.use_state_regressor),
