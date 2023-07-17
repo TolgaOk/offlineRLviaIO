@@ -5,6 +5,7 @@ import cvxpy as cp
 import gymnasium as gym
 from gymnasium import spaces
 from dataclasses import dataclass, asdict
+from collections import deque
 
 from io_agent.plant.base import LinearEnvParams
 from io_agent.control.mpc import Optimizer
@@ -50,7 +51,6 @@ class IOController():
         self.action_size = self.feature_handler.action_size
         self.state_size = self.feature_handler.state_size
         self.aug_state_size = self.feature_handler.aug_state_size
-
         self.train_optimizer = self.prepare_train_optimizer()
 
         self._past_state = None
@@ -83,6 +83,12 @@ class IOController():
         """
         if self._q_theta_su is None or self._q_theta_uu is None:
             return np.zeros((self.action_size,))
+        if self._past_state is not None and self._past_action is not None:
+            self._history = self.feature_handler.update_history(
+                state=self._past_state,
+                action=self._past_action,
+                next_state=state,
+                history=self._history)
         aug_state = self.feature_handler.augment_state(state, self._history)
         self.action_optimizer.parameters["state"].value = aug_state
         if self.include_constraints:
@@ -93,12 +99,6 @@ class IOController():
         if self.action_optimizer.problem.status in ("infeasible", "unbounded"):
             raise RuntimeError(
                 f"Action optimization failed with status: {self.action_optimizer.problem.status}")
-        if self._past_state is not None and self._past_action is not None:
-            self.feature_handler.update_history(
-                state=self._past_state,
-                action=self._past_action,
-                next_state=state,
-                history=self._history)
         self._past_state = state.copy()
         self._past_action = self.action_optimizer.variables["action"].value.copy()
 
@@ -123,7 +123,6 @@ class IOController():
         if self.include_constraints:
             constraint_matrix = cp.Parameter((self.polytope_size, self.action_size))
             constraint_vector = cp.Parameter((self.polytope_size,))
-
         
         objective = (
             cp.quad_form(action, (self._q_theta_uu + self._q_theta_uu.T) / 2)
@@ -187,7 +186,7 @@ class IOController():
         constraint_vector = np.concatenate(constraint_vectors, axis=0)
         return (constraint_matrix, constraint_vector)
 
-    def train(self, dataset: List[AugmentedTransition]) -> None:
+    def train(self, dataset: List[AugmentedTransition], rng: np.random.Generator) -> None:
         """ Train the io agent with the given dataset of augmented transitions
 
         Args:
@@ -198,20 +197,25 @@ class IOController():
             RuntimeError: If the optimization is failed
         """
         augmented_dataset = self.augment_dataset(dataset)
-        states = np.stack([transition.aug_state for transition in augmented_dataset], axis=-1)
-        actions = np.stack([transition.expert_action for transition in augmented_dataset], axis=-1)
+        if len(augmented_dataset) < self.dataset_length:
+            raise ValueError(f"Given dataset length: {self.dataset_length} is greater than the available data: {len(augmented_dataset)}")
+        dataset_indices = rng.permutation(len(augmented_dataset))[:self.dataset_length]
+        transitions = [augmented_dataset[index] for index in dataset_indices]
+
+        states = np.stack([transition.aug_state for transition in transitions], axis=-1)
+        actions = np.stack([transition.expert_action for transition in transitions], axis=-1)
         self.train_optimizer.parameters["states"].value = states
         self.train_optimizer.parameters["actions"].value = actions
 
         if self.include_constraints:
-            for transition in augmented_dataset:
+            for transition in transitions:
                 constraint_matrix, constraint_vector = self.calculate_constraints(transition.state)
                 transition.constraint_matrix = constraint_matrix
                 transition.constraint_vector = constraint_vector
 
-            constraint_matrices = [transition.constraint_matrix for transition in augmented_dataset]
+            constraint_matrices = [transition.constraint_matrix for transition in transitions]
             constraint_vectors = np.stack(
-                [transition.constraint_vector for transition in augmented_dataset], axis=1)
+                [transition.constraint_vector for transition in transitions], axis=1)
             for index, value in enumerate(constraint_matrices):
                 self.train_optimizer.parameters["constraint_matrices"][index].value = value
             self.train_optimizer.parameters["constraint_vector"].value = constraint_vectors
@@ -317,6 +321,7 @@ class IOController():
     def augment_dataset(self, trajectories: List[List[Transition]]) -> List[AugmentedTransition]:
         """ Prepare the given trajectories by augmenting the states and calculating
             the expert action.
+            "Algorithm 1 Using in-hindsight information for IO"
 
         Args:
             trajectories (List[List[Transition]]): List of trajectories that contains transitions
@@ -327,23 +332,34 @@ class IOController():
         all_transitions = []
         for traj_index, trajectory in enumerate(trajectories):
             history = self.feature_handler.reset_history()
+            noise_queue = deque(maxlen=self.expert_agent.horizon)
             for tran_index, transition in enumerate(trajectory):
-                history = self.feature_handler.update_history(
-                    state=transition.state,
-                    next_state=transition.next_state,
-                    action=transition.action,
-                    history=history)
-                if tran_index >= self.feature_handler.n_past:
+                if tran_index >= self.expert_agent.horizon + self.feature_handler.n_past:
+                    hindsighted_tran = trajectory[tran_index - self.expert_agent.horizon]
                     expert_action = self._get_expert_action(
-                        transition.state,
-                        noise_sequence=history["noise"][1:1+self.expert_agent.horizon][::-1, :].T
+                        hindsighted_tran.state,
+                        noise_sequence=np.stack(noise_queue, axis=1)
                     )
                     all_transitions.append(
                         AugmentedTransition(
                             aug_state=self.feature_handler.augment_state(
-                                state=transition.state, history=history),
+                                state=hindsighted_tran.state, history=history),
                             expert_action=expert_action,
-                            **asdict(transition)
+                            **asdict(hindsighted_tran)
                         )
                     )
+                noise_queue.append(
+                    self.feature_handler.infer_noise(
+                        state=transition.state,
+                        next_state=transition.next_state,
+                        action=transition.action,
+                    )
+                )
+                if tran_index >= self.expert_agent.horizon:
+                    hindsighted_tran = trajectory[tran_index - self.expert_agent.horizon]
+                    history = self.feature_handler.update_history(
+                        state=hindsighted_tran.state,
+                        next_state=hindsighted_tran.next_state,
+                        action=hindsighted_tran.action,
+                        history=history)
         return all_transitions

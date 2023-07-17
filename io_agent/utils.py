@@ -25,7 +25,6 @@ class FeatureHandler():
     def __init__(self,
                  env_params: LinearEnvParams,
                  n_past: int,
-                 n_accumulate: int,
                  add_bias: bool,
                  use_state_regressor: bool,
                  use_action_regressor: bool,
@@ -36,28 +35,18 @@ class FeatureHandler():
         Args:
             env_params (LinearEnvParams): Parameters that determines the behavior of the environment.
             n_past (int): The history length of the augmented states
-            n_accumulate (int): The total length of the history (using for noise inference)
             add_bias (bool): Add bias to the (state features/augmented state)
             use_state_regressor (bool): Include past states to the (state features/augmented state)
             use_action_regressor (bool): Include past actions to the (state features/augmented state)
             use_noise_regressor (bool): Include past noises to the (state features/augmented state)
 
-        Raises:
-            ValueError: If the history size "n_accumulate" is less than feature history size "n_past"
         """
-
-        if n_accumulate < n_past:
-            raise ValueError(
-                "The argument n_accumulate must be larger than or equal to the argument n_past")
-
         self.env_params = env_params
         self.n_past = n_past
-        self.n_accumulate = n_accumulate
         self.add_bias = add_bias
         self.use_state_regressor = use_state_regressor
         self.use_action_regressor = use_action_regressor
         self.use_noise_regressor = use_noise_regressor
-        self._noise = np.zeros((self.env_params.e_matrix.shape[1],))
 
         self.noise_size = env_params.e_matrix.shape[1]
         self.state_size = env_params.a_matrix.shape[1]
@@ -85,9 +74,9 @@ class FeatureHandler():
             Dict[str, np.ndarray]: Cleaned history
         """
         return dict(
-            noise=np.zeros((self.n_accumulate, self.noise_size)),
-            state=np.zeros((self.n_accumulate, self.state_size)),
-            action=np.zeros((self.n_accumulate, self.action_size)),
+            noise=np.zeros((self.n_past, self.noise_size)),
+            state=np.zeros((self.n_past, self.state_size)),
+            action=np.zeros((self.n_past, self.action_size)),
         )
 
     def infer_noise(self,
@@ -134,13 +123,13 @@ class FeatureHandler():
         Returns:
             Dict[str, np.ndarray]: Updated history
         """
-        for name, new_vector in (("noise", self._noise), ("state", state), ("action", action)):
-            history[name][1:] = history[name][:-1]
-            history[name][0] = new_vector
-        self._noise = self.infer_noise(
+        noise = self.infer_noise(
             state=state,
             next_state=next_state,
             action=action)
+        for name, new_vector in (("noise", noise), ("state", state), ("action", action)):
+            history[name][1:] = history[name][:-1]
+            history[name][0] = new_vector
         return history
 
     def augment_state(self, state: np.ndarray, history: Dict[str, np.ndarray]) -> np.ndarray:
@@ -159,7 +148,7 @@ class FeatureHandler():
                                 ("state", self.use_state_regressor),
                                 ("action", self.use_action_regressor)):
             if condition:
-                features.append(history[name][:self.n_past].flatten())
+                features.append(history[name].flatten())
         if self.add_bias:
             features.append(np.ones((1,)))
         return np.concatenate([state, *features])
