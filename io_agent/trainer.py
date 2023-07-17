@@ -34,11 +34,13 @@ class ControlLoop():
                  output_disturbance: np.ndarray,
                  plant: Plant,
                  controller: MPC,
+                 rng: np.random.Generator
                  ) -> None:
         self.state_disturbance = state_disturbance
         self.output_disturbance = output_disturbance
         self.plant = plant
         self.controller = controller
+        self.rng = rng
 
     def simulate(self,
                  initial_state: Optional[np.ndarray],
@@ -59,7 +61,7 @@ class ControlLoop():
         simulation_sequence = []
 
         if initial_state is None:
-            initial_state, _ = self.plant.reset()
+            initial_state, _ = self.plant.reset(self.rng.integers(0, 2**30).item())
         horizon = self.controller.horizon if self.controller.horizon is not None else 0
 
         self.controller.reset()

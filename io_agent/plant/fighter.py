@@ -1,4 +1,5 @@
 from typing import Any, Tuple, Dict, Optional, Union
+from warnings import warn
 import numpy as np
 from gymnasium import spaces
 
@@ -62,10 +63,15 @@ class FighterEnv(Plant):
     def __init__(self,
                   max_length: int,
                   env_params: LinearEnvParams,
-                  disturbance_bias: Optional[np.ndarray]
+                  disturbance_bias: Optional[np.ndarray],
+                  rng: Optional[np.random.Generator],
                   ) -> None:
         self.observation_space = spaces.Box(-np.inf, np.inf, shape=(6,), dtype=float)
         self.action_space = spaces.Box(-np.inf, np.inf, shape=(2,), dtype=float)
+        if rng is None:
+            rng = np.random.default_rng()
+            warn("Setting a random seed")
+        self.rng = rng
 
         self.max_length = max_length
         self.sigma_v = np.array([
@@ -75,7 +81,7 @@ class FighterEnv(Plant):
 
         self.state = None
         self.iteration = None
-        self.state_disturbance = self._generate_state_disturbance()
+        self.state_disturbance = self._generate_state_disturbance(self.rng)
         if disturbance_bias is not None:
             self.state_disturbance += disturbance_bias
         self.output_disturbance = np.zeros(
@@ -84,7 +90,7 @@ class FighterEnv(Plant):
         reference_sequence = np.zeros((self.observation_space.shape[0], self.max_length * 2))
         super().__init__(params=env_params, reference_sequence=reference_sequence)
 
-    def _generate_state_disturbance(self) -> np.ndarray:
+    def _generate_state_disturbance(self, rng: np.random.Generator) -> np.ndarray:
         """ Generate random time varying noise
 
         Returns:
@@ -92,9 +98,9 @@ class FighterEnv(Plant):
                 where L denotes the environment length
         """
         return np.stack([
-            0.5 * np.sin(np.linspace(0, 6*np.pi, self.max_length * 2) + np.pi/2 * np.random.rand()),
+            0.5 * np.sin(np.linspace(0, 6*np.pi, self.max_length * 2) + np.pi/2 * rng.random()),
             0.01 * np.ones(self.max_length * 2)],
-          axis=0) + self.sigma_v @ np.random.randn(2, self.max_length * 2)
+          axis=0) + self.sigma_v @ rng.normal(size=(2, self.max_length * 2))
 
     def _measure(self) -> np.ndarray:
         """ Step output of the plant
@@ -123,7 +129,8 @@ class FighterEnv(Plant):
         """
         super().reset(seed=seed)
         self.iteration = 0
-        self.state = np.random.rand(self.observation_space.shape[0]) / 10
+        rng = np.random.default_rng(seed)
+        self.state = rng.random(self.observation_space.shape[0]) / 10
         info = None
         return self._measure(), info
 
