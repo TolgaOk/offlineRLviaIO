@@ -7,8 +7,8 @@ from gymnasium import spaces
 from dataclasses import dataclass, asdict
 from itertools import chain
 
-from io_agent.trainer import Transition
-from io_agent.plant.base import LinearEnvParams
+from io_agent.evaluator import Transition
+from io_agent.plant.base import EnvMatrices
 
 
 @dataclass
@@ -23,7 +23,7 @@ class AugmentedTransition(Transition):
 class FeatureHandler():
 
     def __init__(self,
-                 env_params: LinearEnvParams,
+                 env_params: EnvMatrices,
                  n_past: int,
                  add_bias: bool,
                  use_state_regressor: bool,
@@ -33,7 +33,7 @@ class FeatureHandler():
         """ Feature Handler for the IO agents
 
         Args:
-            env_params (LinearEnvParams): Parameters that determines the behavior of the environment.
+            env_params (EnvMatrices): Parameters that determines the behavior of the environment.
             n_past (int): The history length of the augmented states
             add_bias (bool): Add bias to the (state features/augmented state)
             use_state_regressor (bool): Include past states to the (state features/augmented state)

@@ -1,12 +1,22 @@
 from typing import Any, Tuple, Dict, Optional, Union
 from warnings import warn
+from dataclasses import asdict
 import numpy as np
+import sympy
 from gymnasium import spaces
 
-from io_agent.plant.base import LinearEnvParams, Plant
+from io_agent.plant.base import (Plant,
+                                 LinearSystem,
+                                 QuadraticCosts,
+                                 LinearConstraints,
+                                 DynamicalSystem,
+                                 SystemInput,
+                                 InputValues,
+                                 EnvMatrices,
+                                 DiscreteLinearEnvMatrices)
 
 
-fighter_env_params = LinearEnvParams(
+fighter_system = DiscreteLinearEnvMatrices(
     a_matrix=np.array([
         [0.9991, -1.3736, -0.6730, -1.1226, 0.3420, -0.2069],
         [0.0000, 0.9422, 0.0319, -0.0000, -0.0166, 0.0091],
@@ -32,9 +42,16 @@ fighter_env_params = LinearEnvParams(
         [0, 0],
     ]),
     c_matrix=np.eye(6),
-    state_cost=np.diag([1, 1000,  100, 1000, 1, 1]),
-    action_cost=np.eye(2),
-    final_cost=np.diag([1, 1000,  100, 1000, 1, 1]),
+    d_matrix=np.zeros((6, 2)),
+)
+
+costs = QuadraticCosts(
+    state=np.diag([1, 1000,  100, 1000, 1, 1]),
+    action=np.eye(2),
+    final=np.diag([1, 1000,  100, 1000, 1, 1]),
+)
+
+constraints = LinearConstraints(
     state_constraint_matrix=np.array(
         [[1, 0, 0, 0, 0, 0],
          [-1, 0, 0, 0, 0, 0]]
@@ -55,19 +72,24 @@ class FighterEnv(Plant):
 
     Args:
         max_length (int): Number of simulation step of the environment.
-        env_params (LinearEnvParams): Parameters that determines the behavior of the environment.
+        env_params (DiscreteLinearEnvParams): Parameters that determines the behavior of the environment.
     """
-
+    state_size: int = 6
+    action_size: int = 2
+    noise_size: int = 2
+    output_size: int = 6
     metadata = {"render_modes": []}
 
     def __init__(self,
-                  max_length: int,
-                  env_params: LinearEnvParams,
-                  disturbance_bias: Optional[np.ndarray],
-                  rng: Optional[np.random.Generator],
-                  ) -> None:
-        self.observation_space = spaces.Box(-np.inf, np.inf, shape=(6,), dtype=float)
-        self.action_space = spaces.Box(-np.inf, np.inf, shape=(2,), dtype=float)
+                 max_length: int,
+                 disturbance_bias: Optional[np.ndarray] = None,
+                 rng: Optional[np.random.Generator] = None,
+                 ) -> None:
+        self.n_state = 6
+        self.n_action = 2
+        self.n_noise = 2
+        self.observation_space = spaces.Box(-np.inf, np.inf, shape=(self.n_state,), dtype=float)
+        self.action_space = spaces.Box(-np.inf, np.inf, shape=(self.n_action,), dtype=float)
         if rng is None:
             rng = np.random.default_rng()
             warn("Setting a random seed")
@@ -78,6 +100,7 @@ class FighterEnv(Plant):
             [0.01, 0],
             [0, 0.001]
         ])
+        self.dt = 0.035
 
         self.state = None
         self.iteration = None
@@ -85,10 +108,24 @@ class FighterEnv(Plant):
         if disturbance_bias is not None:
             self.state_disturbance += disturbance_bias
         self.output_disturbance = np.zeros(
-            (self.observation_space.shape[0], self.max_length * 2 + 1))
-        self.action_disturbance = np.zeros((self.action_space.shape[0], self.max_length * 2))
-        reference_sequence = np.zeros((self.observation_space.shape[0], self.max_length * 2))
-        super().__init__(params=env_params, reference_sequence=reference_sequence)
+            (self.n_state, self.max_length * 2 + 1))
+        self.action_disturbance = np.zeros((self.n_action, self.max_length * 2))
+        reference_sequence = np.zeros((self.n_state, self.max_length * 2))
+        super().__init__(costs=costs, constraints=constraints, reference_sequence=reference_sequence)
+
+        self.env_params = EnvMatrices(
+            **asdict(fighter_system),
+            **asdict(constraints),
+            state_cost=costs.state,
+            action_cost=costs.action,
+            final_cost=costs.final,
+        )
+
+    def symbolic_dynamical_system(self) -> DynamicalSystem:
+        raise NotImplementedError
+
+    def fill_symbols(self, input_values: InputValues) -> Dict[str, Union[float, np.ndarray]]:
+        raise NotImplementedError
 
     def _generate_state_disturbance(self, rng: np.random.Generator) -> np.ndarray:
         """ Generate random time varying noise
@@ -100,16 +137,16 @@ class FighterEnv(Plant):
         return np.stack([
             0.5 * np.sin(np.linspace(0, 6*np.pi, self.max_length * 2) + np.pi/2 * rng.random()),
             0.01 * np.ones(self.max_length * 2)],
-          axis=0) + self.sigma_v @ rng.normal(size=(2, self.max_length * 2))
+            axis=0) + self.sigma_v @ rng.normal(size=(2, self.max_length * 2))
 
     def _measure(self) -> np.ndarray:
-        """ Step output of the plant
+        """ Step output of the plant (does not use d_matrix)
 
         Returns:
             np.ndarray: Output array of shape (S,)
                 where S denotes the state/input size
         """
-        return self.params.c_matrix @ self.state + self.output_disturbance[:, self.iteration]
+        return self.env_params.c_matrix @ self.state + self.output_disturbance[:, self.iteration]
 
     def reset(self,
               seed: Optional[int] = None,
@@ -130,7 +167,7 @@ class FighterEnv(Plant):
         super().reset(seed=seed)
         self.iteration = 0
         rng = np.random.default_rng(seed)
-        self.state = rng.random(self.observation_space.shape[0]) / 10
+        self.state = rng.random(self.n_state) / 10
         info = None
         return self._measure(), info
 
@@ -162,11 +199,11 @@ class FighterEnv(Plant):
         state_noise = self.state_disturbance[:, self.iteration]
         reference = self.reference_sequence[:, self.iteration]
 
-        next_state = self.params.a_matrix @ self.state + self.params.b_matrix @ noisy_action + \
-            self.params.e_matrix @ state_noise
+        next_state = self.env_params.a_matrix @ self.state + self.env_params.b_matrix @ noisy_action + \
+            self.env_params.e_matrix @ state_noise
         difference = (self.state - reference)
-        cost = (difference.T.dot(self.params.state_cost).dot(difference)
-                + noisy_action.T.dot(self.params.action_cost).dot(noisy_action))
+        cost = (difference.T.dot(self.env_params.state_cost).dot(difference)
+                + noisy_action.T.dot(self.env_params.action_cost).dot(noisy_action))
         self.iteration += 1
         truncation = self.iteration == self.max_length
         terminal = False

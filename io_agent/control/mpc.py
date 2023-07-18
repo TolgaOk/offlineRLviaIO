@@ -6,7 +6,7 @@ import gymnasium as gym
 from gymnasium import spaces
 from dataclasses import dataclass
 
-from io_agent.plant.base import LinearEnvParams
+from io_agent.plant.base import EnvMatrices
 
 
 @dataclass
@@ -20,24 +20,23 @@ class MPC():
     """ Linear MPC agent
 
     Args:
-        env_params (LinearEnvParams): Linear environment parameters
+        env_params (EnvMatrices): Linear environment parameters
         horizon (int): MPC horizon
     """
 
     def __init__(self,
-                 env_params: LinearEnvParams,
+                 action_size: int,
+                 state_size: int,
+                 noise_size: int,
+                 output_size: int,
                  horizon: int,
                  ) -> None:
-        self.env_params = env_params
+        
+        self.action_size = action_size
+        self.state_size = state_size
+        self.noise_size = noise_size
+        self.output_size = output_size
         self.horizon = horizon
-
-        self.action_size = self.env_params.b_matrix.shape[-1]
-        self.state_size = self.env_params.a_matrix.shape[-1]
-        self.noise_size = self.env_params.e_matrix.shape[-1]
-        self.ref_size = self.env_params.a_matrix.shape[-1]
-        self.output_size = self.env_params.a_matrix.shape[-1]
-
-        self.optimizer = self.prepare_optimizer()
 
     def compute(self,
                 initial_state: np.ndarray,
@@ -67,7 +66,7 @@ class MPC():
         """
 
         if output_disturbance is None:
-            output_disturbance = np.zeros((self.ref_size, self.horizon))
+            output_disturbance = np.zeros((self.output_size, self.horizon))
 
         if state_disturbance is None:
             state_disturbance = np.zeros((self.noise_size, self.horizon))
@@ -83,12 +82,13 @@ class MPC():
     def reset(self) -> None:
         pass
 
-    def prepare_optimizer(self) -> Optimizer:
+    def prepare_optimizer(self, env_params: EnvMatrices) -> Optimizer:
         """ Prepare a parametric optimization problem for the mpc agent
 
         Returns:
             Optimizer: Optimization problem, parameters, and variables
         """
+        
         action_list = []
         constraints = []
         cost = 0
@@ -101,18 +101,18 @@ class MPC():
         for step in range(self.horizon):
             action_var = cp.Variable((self.action_size), name=f"mu_{step+1}")
             action_list.append(action_var)
-            state = (self.env_params.a_matrix @ state +
-                     self.env_params.b_matrix @ action_var +
-                     self.env_params.e_matrix @ w_par[:, step])
-            state_cost = (self.env_params.state_cost if step < self.horizon - 1
-                          else self.env_params.final_cost)
+            state = (env_params.a_matrix @ state +
+                     env_params.b_matrix @ action_var +
+                     env_params.e_matrix @ w_par[:, step])
+            state_cost = (env_params.state_cost if step < self.horizon - 1
+                          else env_params.final_cost)
             cost = cost + cp.quad_form(state, state_cost)
-            cost = cost + cp.quad_form(action_var, self.env_params.action_cost)
+            cost = cost + cp.quad_form(action_var, env_params.action_cost)
 
-            constraints += [self.env_params.state_constraint_matrix @ state <=
-                            self.env_params.state_constraint_vector]
-            constraints += [self.env_params.action_constraint_matrix @ action_var <=
-                            self.env_params.action_constraint_vector]
+            constraints += [env_params.state_constraint_matrix @ state <=
+                            env_params.state_constraint_vector]
+            constraints += [env_params.action_constraint_matrix @ action_var <=
+                            env_params.action_constraint_vector]
         objective = cp.Minimize(cost)
         problem = cp.Problem(objective, constraints)
 

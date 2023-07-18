@@ -7,10 +7,10 @@ from gymnasium import spaces
 from dataclasses import dataclass, asdict
 from collections import deque
 
-from io_agent.plant.base import LinearEnvParams
+from io_agent.plant.base import EnvMatrices
 from io_agent.control.mpc import Optimizer
 from io_agent.utils import FeatureHandler, AugmentedTransition
-from io_agent.trainer import Transition
+from io_agent.evaluator import Transition
 from io_agent.control.mpc import MPC
 
 
@@ -18,12 +18,12 @@ class IOController():
     """ Inverse Optimization based controller agent
 
     Args:
-        env_params (LinearEnvParams): Linear environment parameters
+        env_params (EnvMatrices): Linear environment parameters
         dataset_length (int): MPC dataset_length
     """
 
     def __init__(self,
-                 env_params: LinearEnvParams,
+                 env_params: EnvMatrices,
                  dataset_length: int,
                  feature_handler: FeatureHandler,
                  expert_agent: MPC,
