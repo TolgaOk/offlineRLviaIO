@@ -12,6 +12,7 @@ from io_agent.control.mpc import Optimizer
 from io_agent.utils import FeatureHandler, AugmentedTransition
 from io_agent.evaluator import Transition
 from io_agent.control.mpc import MPC
+from io_agent.control.rmpc import RobustMPC
 
 
 class IOController():
@@ -26,7 +27,6 @@ class IOController():
                  env_params: EnvMatrices,
                  dataset_length: int,
                  feature_handler: FeatureHandler,
-                 expert_agent: MPC,
                  include_constraints: bool = True,
                  action_constraints_flag: bool = True,
                  state_constraints_flag: bool = True,
@@ -34,7 +34,6 @@ class IOController():
                  softening_penalty: float = 1e9,
                  ) -> None:
         self.feature_handler = feature_handler
-        self.expert_agent = expert_agent
         self.include_constraints = include_constraints
         self.action_constraints_flag = action_constraints_flag
         self.state_constraints_flag = state_constraints_flag
@@ -42,7 +41,7 @@ class IOController():
         self.softening_penalty = softening_penalty
         self.dataset_length = dataset_length
         self.env_params = env_params
-        self.horizon = None # For compatibility with the ControlLoop class 
+        self.horizon = None  # For compatibility with the ControlLoop class
 
         self.polytope_size = (
             env_params.action_constraint_vector.shape[0] * int(action_constraints_flag)
@@ -123,7 +122,7 @@ class IOController():
         if self.include_constraints:
             constraint_matrix = cp.Parameter((self.polytope_size, self.action_size))
             constraint_vector = cp.Parameter((self.polytope_size,))
-        
+
         objective = (
             cp.quad_form(action, (self._q_theta_uu + self._q_theta_uu.T) / 2)
             + 2 * cp.sum(cp.multiply(state, self._q_theta_su @ action))
@@ -186,7 +185,7 @@ class IOController():
         constraint_vector = np.concatenate(constraint_vectors, axis=0)
         return (constraint_matrix, constraint_vector)
 
-    def train(self, dataset: List[AugmentedTransition], rng: np.random.Generator) -> None:
+    def train(self, augmented_dataset: List[AugmentedTransition], rng: np.random.Generator) -> None:
         """ Train the io agent with the given dataset of augmented transitions
 
         Args:
@@ -196,9 +195,9 @@ class IOController():
         Raises:
             RuntimeError: If the optimization is failed
         """
-        augmented_dataset = self.augment_dataset(dataset)
         if len(augmented_dataset) < self.dataset_length:
-            raise ValueError(f"Given dataset length: {self.dataset_length} is greater than the available data: {len(augmented_dataset)}")
+            raise ValueError(
+                f"Given dataset length: {self.dataset_length} is greater than the available data: {len(augmented_dataset)}")
         dataset_indices = rng.permutation(len(augmented_dataset))[:self.dataset_length]
         transitions = [augmented_dataset[index] for index in dataset_indices]
 
@@ -297,6 +296,21 @@ class IOController():
             }
         )
 
+
+class AugmentDataset():
+    """ Update the given trajectories with the actions of the expert agent and augment
+    states with the feature handler
+        "Algorithm 1 Using in-hindsight information for IO"
+
+    Args:
+        expert_agent (Union[MPC, RobustMPC]): Expert MPC agent
+        feature_handler (FeatureHandler): State augmenter
+    """
+
+    def __init__(self, expert_agent: Union[MPC, RobustMPC], feature_handler: FeatureHandler) -> None:
+        self.expert_agent = expert_agent
+        self.feature_handler = feature_handler
+
     def _get_expert_action(self, state: np.ndarray, noise_sequence: np.ndarray) -> np.ndarray:
         """ Compute the expert action using the expert agent
 
@@ -315,19 +329,18 @@ class IOController():
             reference_sequence=np.zeros((self.expert_agent.output_size, self.expert_agent.horizon)),
             output_disturbance=np.zeros((self.expert_agent.output_size, self.expert_agent.horizon)),
             state_disturbance=noise_sequence
-                                  )
+        )
         return action
 
-    def augment_dataset(self, trajectories: List[List[Transition]]) -> List[AugmentedTransition]:
+    def __call__(self, trajectories: List[List[Transition]]) -> List[AugmentedTransition]:
         """ Prepare the given trajectories by augmenting the states and calculating
             the expert action.
-            "Algorithm 1 Using in-hindsight information for IO"
 
         Args:
             trajectories (List[List[Transition]]): List of trajectories that contains transitions
 
         Returns:
-            List[AugmentedTransition]: List of augmented transitions
+            List[AugmentedTransition]: Flatten list of augmented transitions
         """
         all_transitions = []
         for traj_index, trajectory in enumerate(trajectories):
