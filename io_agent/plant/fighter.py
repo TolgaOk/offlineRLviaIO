@@ -16,24 +16,24 @@ from io_agent.plant.base import (Plant,
                                  DiscreteLinearEnvMatrices)
 
 
-fighter_system = DiscreteLinearEnvMatrices(
-    a_matrix=np.array([
-        [0.9991, -1.3736, -0.6730, -1.1226, 0.3420, -0.2069],
-        [0.0000, 0.9422, 0.0319, -0.0000, -0.0166, 0.0091],
-        [0.0004, 0.3795, 0.9184, -0.0002, -0.6518, 0.4612],
-        [0.0000, 0.0068, 0.0335, 1.0000, -0.0136, 0.0096],
-        [0, 0, 0, 0, 0.3499, 0],
-        [0, 0, 0, 0, 0, 0.3499],
+fighter_system = LinearSystem(
+    a_matrix=sympy.Matrix([
+        [-0.0226, -36.6170, -18.8970, -32.0900, 3.2509, -0.7626],
+        [0.0001, -1.8997, 0.9831, -0.0007, -0.1708, -0.0050],
+        [0.0123, 11.7200, -2.6316, 0.0009, -31.6040, 22.3960],
+        [0, 0, 1, 0, 0, 0],
+        [0, 0, 0, 0, -30, 0],
+        [0, 0, 0, 0, 0, -30],
     ]),
-    b_matrix=np.array([
-        [0.1457, -0.0819],
-        [-0.0072, 0.0035],
-        [-0.4085, 0.2893],
-        [-0.0052, 0.0037],
-        [0.6501, 0],
-        [0, 0.6501],
+    b_matrix=sympy.Matrix([
+        [0, 0],
+        [0, 0],
+        [0, 0],
+        [0, 0],
+        [30, 0],
+        [0, 30],
     ]),
-    e_matrix=np.array([
+    e_matrix=sympy.Matrix([
         [0, 0],
         [0, 0],
         [1, 0],
@@ -41,8 +41,8 @@ fighter_system = DiscreteLinearEnvMatrices(
         [0, 0],
         [0, 0],
     ]),
-    c_matrix=np.eye(6),
-    d_matrix=np.zeros((6, 2)),
+    c_matrix=sympy.eye(6),
+    d_matrix=sympy.zeros(6, 2)
 )
 
 costs = QuadraticCosts(
@@ -113,8 +113,16 @@ class FighterEnv(Plant):
         reference_sequence = np.zeros((self.n_state, self.max_length * 2))
         super().__init__(costs=costs, constraints=constraints, reference_sequence=reference_sequence)
 
+        discerete_system = self.discretize(
+            fighter_system,
+            lin_point=InputValues(
+                state=np.zeros((6,)),
+                action=np.zeros((2,)),
+                noise=np.zeros((2,)),
+            ),
+            method="exact")
         self.env_params = EnvMatrices(
-            **asdict(fighter_system),
+            **asdict(discerete_system),
             **asdict(constraints),
             state_cost=costs.state,
             action_cost=costs.action,
@@ -122,10 +130,29 @@ class FighterEnv(Plant):
         )
 
     def symbolic_dynamical_system(self) -> DynamicalSystem:
-        raise NotImplementedError
+
+        state = sympy.Matrix(sympy.symbols(" ".join([f"x_{index+1}" for index in range(6)])))
+        action = sympy.Matrix(sympy.symbols(" ".join([f"u_{index+1}" for index in range(2)])))
+        noise = sympy.Matrix(sympy.symbols(" ".join([f"w_{index+1}" for index in range(2)])))
+        return DynamicalSystem(
+            sys_input=SystemInput(
+                state=state,
+                action=action,
+                noise=noise,
+            ),
+            dyn_eq=(fighter_system.a_matrix @ state
+                    + fighter_system.b_matrix @ action
+                    + fighter_system.e_matrix @ noise),
+            out_eq=(fighter_system.c_matrix @ state + fighter_system.d_matrix @ action)
+        )
 
     def fill_symbols(self, input_values: InputValues) -> Dict[str, Union[float, np.ndarray]]:
-        raise NotImplementedError
+        return dict(
+            **{f"x_{index+1}": value for index, value in enumerate(input_values.state.flatten())},
+            **{f"u_{index+1}": value for index, value in enumerate(input_values.action.flatten())},
+            **{f"w_{index+1}": value for index, value in enumerate(input_values.noise.flatten())},
+            dt=0.035,
+        )
 
     def _generate_state_disturbance(self, rng: np.random.Generator) -> np.ndarray:
         """ Generate random time varying noise

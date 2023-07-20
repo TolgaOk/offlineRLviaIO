@@ -146,8 +146,7 @@ class Plant(gym.Env):
               -sympy.diag(*(jac_dyn_a @ init_state))
               - sympy.diag(*(jac_dyn_b @ init_action))
               - sympy.diag(*(jac_dyn_e @ init_noise))
-              + sympy.diag(*dynamical_sys.dyn_eq)
-              ],
+              + sympy.diag(*dynamical_sys.dyn_eq)],
              [sympy.zeros(n_state, n_state), sympy.eye(n_state)]])
         b_matrix = sympy.Matrix(
             [[jac_dyn_b],
@@ -218,7 +217,7 @@ class Plant(gym.Env):
         return DiscreteLinearEnvMatrices(
             a_matrix=discerete_a_matrix,
             b_matrix=discerete_b_matrix,
-            e_matrix=discerete_e_matrix,
+            e_matrix=cont_e_matrix,
             c_matrix=cont_c_matrix,
             d_matrix=cont_d_matrix,
         )
