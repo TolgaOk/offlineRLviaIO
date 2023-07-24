@@ -6,7 +6,7 @@ import gymnasium as gym
 from gymnasium import spaces
 from dataclasses import dataclass
 
-from io_agent.plant.base import EnvMatrices
+from io_agent.plant.base import NominalLinearEnvParams
 
 
 @dataclass
@@ -20,7 +20,6 @@ class MPC():
     """ Linear MPC agent
 
     Args:
-        env_params (EnvMatrices): Linear environment parameters
         horizon (int): MPC horizon
     """
 
@@ -31,7 +30,7 @@ class MPC():
                  output_size: int,
                  horizon: int,
                  ) -> None:
-        
+
         self.action_size = action_size
         self.state_size = state_size
         self.noise_size = noise_size
@@ -70,7 +69,6 @@ class MPC():
 
         if state_disturbance is None:
             state_disturbance = np.zeros((self.noise_size, self.horizon))
-
         self.optimizer.parameters["initial_state"].value = initial_state
         self.optimizer.parameters["reference_sequence"].value = (
             reference_sequence - output_disturbance)
@@ -78,48 +76,54 @@ class MPC():
 
         result = self.optimizer.problem.solve(solver=cp.MOSEK)
         return self.optimizer.variables["actions"].value[:, 0], result
-    
+
     def reset(self) -> None:
         pass
 
-    def prepare_optimizer(self, env_params: EnvMatrices) -> Optimizer:
+    def prepare_optimizer(self, params: NominalLinearEnvParams) -> Optimizer:
         """ Prepare a parametric optimization problem for the mpc agent
 
         Returns:
             Optimizer: Optimization problem, parameters, and variables
         """
-        
         action_list = []
         constraints = []
         cost = 0
 
-        x_par = cp.Parameter(self.state_size)
+        init_state = cp.Parameter(self.state_size)
         r_par = cp.Parameter((self.state_size, self.horizon))
         w_par = cp.Parameter((self.noise_size, self.horizon))
 
-        state = x_par
+        lin_state = params.matrices.lin_input.state  # Linearization point of the state
+        lin_next_state = params.matrices.nonlinear_dyn  # Linearization point of the next_state
+        lin_action = params.matrices.lin_input.action  # Linearization point of the action
+        lin_noise = params.matrices.lin_input.noise  # Linearization point of the noise
+        lin_output = params.matrices.nonlinear_out  # Linearization point of the output
+
+        state_delta = init_state - lin_state
         for step in range(self.horizon):
             action_var = cp.Variable((self.action_size), name=f"mu_{step+1}")
             action_list.append(action_var)
-            state = (env_params.a_matrix @ state +
-                     env_params.b_matrix @ action_var +
-                     env_params.e_matrix @ w_par[:, step])
-            state_cost = (env_params.state_cost if step < self.horizon - 1
-                          else env_params.final_cost)
-            cost = cost + cp.quad_form(state, state_cost)
-            cost = cost + cp.quad_form(action_var, env_params.action_cost)
+            state_delta = (params.matrices.a_matrix @ (state_delta) +
+                           params.matrices.b_matrix @ (action_var - lin_action) +
+                           params.matrices.e_matrix @ (w_par[:, step] - lin_noise) +
+                           lin_next_state)
+            state_cost = (params.costs.state if step < self.horizon - 1
+                          else params.costs.final)
+            cost = cost + cp.quad_form((state_delta + lin_state), state_cost)
+            cost = cost + cp.quad_form(action_var, params.costs.action)
 
-            constraints += [env_params.state_constraint_matrix @ state <=
-                            env_params.state_constraint_vector]
-            constraints += [env_params.action_constraint_matrix @ action_var <=
-                            env_params.action_constraint_vector]
+            constraints += [params.constraints.state_constraint_matrix @ (state_delta + lin_state) <=
+                            params.constraints.state_constraint_vector]
+            constraints += [params.constraints.action_constraint_matrix @ action_var <=
+                            params.constraints.action_constraint_vector]
         objective = cp.Minimize(cost)
         problem = cp.Problem(objective, constraints)
 
         return Optimizer(
             problem=problem,
             parameters={
-                "initial_state": x_par,
+                "initial_state": init_state,
                 "reference_sequence": r_par,
                 "state_disturbance": w_par
             },

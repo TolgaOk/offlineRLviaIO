@@ -1,4 +1,4 @@
-from typing import Optional, Dict, Union
+from typing import Optional, Dict, Union, Tuple
 import numpy as np
 from dataclasses import dataclass, asdict
 from abc import abstractmethod
@@ -26,7 +26,7 @@ class LinearConstraints:
 class InputValues():
     state: np.ndarray
     action: np.ndarray
-    noise: Optional[np.ndarray] = None
+    noise: np.ndarray
 
 
 @dataclass
@@ -34,6 +34,7 @@ class SystemInput():
     state: sympy.Matrix
     action: sympy.Matrix
     noise: sympy.Matrix
+    state_dot: sympy.Matrix
 
 
 @dataclass
@@ -58,11 +59,25 @@ class LinearSystem():
     e_matrix: sympy.Matrix
     c_matrix: sympy.Matrix
     d_matrix: sympy.Matrix
+    nonlinear_dyn: sympy.Matrix
+    nonlinear_out: sympy.Matrix
 
 
 @dataclass
 class DiscreteLinearEnvMatrices():
-    """ Parameters of a Linear time invariant system
+    a_matrix: np.ndarray
+    b_matrix: np.ndarray
+    e_matrix: np.ndarray
+    c_matrix: np.ndarray
+    d_matrix: np.ndarray
+    lin_input: InputValues
+    nonlinear_dyn: np.ndarray
+    nonlinear_out: np.ndarray
+
+
+@dataclass
+class NominalLinearEnvParams():
+    """ Parameters of a Nominal Linear time invariant system
         system  x' = Ax + Bu + Ew
                 o = Cx
         cost    (o-r)^TQ_{x}(o-r) + u^TQ_{u}u 
@@ -76,27 +91,9 @@ class DiscreteLinearEnvMatrices():
         matrix, h_u denotes the action constraints and w denotes the state
         disturbance, and u denotes the action/input.
     """
-    a_matrix: np.ndarray
-    b_matrix: np.ndarray
-    e_matrix: np.ndarray
-    c_matrix: np.ndarray
-    d_matrix: np.ndarray
-
-
-@dataclass
-class EnvMatrices():
-    a_matrix: np.ndarray
-    b_matrix: np.ndarray
-    e_matrix: np.ndarray
-    c_matrix: np.ndarray
-    d_matrix: np.ndarray
-    state_constraint_matrix: np.ndarray
-    state_constraint_vector: np.ndarray
-    action_constraint_matrix: np.ndarray
-    action_constraint_vector: np.ndarray
-    state_cost: np.ndarray
-    action_cost: np.ndarray
-    final_cost: np.ndarray
+    matrices: DiscreteLinearEnvMatrices
+    constraints: LinearConstraints
+    costs: QuadraticCosts
 
 
 class Plant(gym.Env):
@@ -119,129 +116,122 @@ class Plant(gym.Env):
         self.reference_sequence = reference_sequence
         super().__init__()
 
+    def nominal_model(self, lin_point: InputValues, discretization_method: str = "exact") -> NominalLinearEnvParams:
+        linear_system = self.linearize(self.symbolic_dynamical_system())
+        discerete_matrices = self.discretize(
+            linear_system,
+            lin_point=lin_point,
+            method=discretization_method)
+        return NominalLinearEnvParams(
+            matrices=discerete_matrices,
+            constraints=self.constraints,
+            costs=self.costs
+        )
+
     @abstractmethod
     def symbolic_dynamical_system(self) -> DynamicalSystem:
         raise NotImplementedError
 
     @abstractmethod
-    def fill_symbols(self, input_values: InputValues) -> Dict[str, Union[float, np.ndarray]]:
+    def fill_symbols(self,
+                     input_values: InputValues,
+                     dynamical_sys: LinearSystem
+                     ) -> Dict[str, Union[float, np.ndarray]]:
         raise NotImplementedError
 
     def linearize(self, dynamical_sys: DynamicalSystem) -> LinearSystem:
+        state = dynamical_sys.sys_input.state
+        action = dynamical_sys.sys_input.action
+        noise = dynamical_sys.sys_input.noise
+        next_state = dynamical_sys.sys_input.state_dot
 
-        init_state = dynamical_sys.sys_input.state
-        init_action = dynamical_sys.sys_input.action
-        init_noise = dynamical_sys.sys_input.noise
-
-        jac_dyn_a = dynamical_sys.dyn_eq.jacobian(init_state)
-        jac_dyn_b = dynamical_sys.dyn_eq.jacobian(init_action)
-        jac_dyn_e = dynamical_sys.dyn_eq.jacobian(init_noise)
-
-        n_state = init_state.shape[0]
-        n_action = init_action.shape[0]
-        n_noise = init_noise.shape[0]
-
-        a_matrix = sympy.Matrix(
-            [[jac_dyn_a,
-              -sympy.diag(*(jac_dyn_a @ init_state))
-              - sympy.diag(*(jac_dyn_b @ init_action))
-              - sympy.diag(*(jac_dyn_e @ init_noise))
-              + sympy.diag(*dynamical_sys.dyn_eq)],
-             [sympy.zeros(n_state, n_state), sympy.eye(n_state)]])
-        b_matrix = sympy.Matrix(
-            [[jac_dyn_b],
-             [sympy.zeros(n_state, n_action)]])
-        e_matrix = sympy.Matrix(
-            [[jac_dyn_e],
-             [sympy.zeros(n_state, n_noise)]])
-
-        jac_out_c = dynamical_sys.out_eq.jacobian(init_state)
-        jac_out_d = dynamical_sys.out_eq.jacobian(init_action)
-
-        c_matrix = sympy.Matrix(
-            [[jac_out_c,
-              - sympy.diag(*(jac_out_c @ init_state))
-              - sympy.diag(*(jac_out_d @ init_action))
-              + sympy.diag(*dynamical_sys.out_eq)],
-             [sympy.zeros(n_state, 2 * n_state)]])
-        d_matrix = sympy.Matrix(
-            [[jac_out_d],
-             [sympy.zeros(n_state, n_action)]]
-        )
+        jac_dyn_a = dynamical_sys.dyn_eq.jacobian(state)
+        jac_dyn_b = dynamical_sys.dyn_eq.jacobian(action)
+        jac_dyn_e = dynamical_sys.dyn_eq.jacobian(noise)
+        jac_out_c = dynamical_sys.out_eq.jacobian(next_state)
+        jac_out_d = dynamical_sys.out_eq.jacobian(action)
 
         return LinearSystem(
-            a_matrix=a_matrix,
-            b_matrix=b_matrix,
-            e_matrix=e_matrix,
-            c_matrix=c_matrix,
-            d_matrix=d_matrix)
+            a_matrix=jac_dyn_a,
+            b_matrix=jac_dyn_b,
+            e_matrix=jac_dyn_e,
+            c_matrix=jac_out_c,
+            d_matrix=jac_out_d,
+            nonlinear_dyn=dynamical_sys.dyn_eq,
+            nonlinear_out=dynamical_sys.out_eq,
+        )
+
+    def _evaluate_sym(self, sym: sympy.Matrix, values: Dict[str, Union[np.ndarray, float]]) -> Union[np.ndarray, float]:
+        return np.array(sym.evalf(subs=values), dtype=np.float64)
 
     def discretize(self,
                    dynamical_sys: LinearSystem,
                    lin_point: InputValues,
                    method: str = "exact"
                    ) -> DiscreteLinearEnvMatrices:
+        values = self.fill_symbols(lin_point, dynamical_sys)
+        continouos_matrices = {key: self._evaluate_sym(getattr(dynamical_sys, f"{key}_matrix"), values)
+                               for key in ("a", "b", "c", "e", "d")}
+        x_dot_zero = self._evaluate_sym(dynamical_sys.nonlinear_dyn, values).flatten()
+        y_zero = self._evaluate_sym(dynamical_sys.nonlinear_out, values)
+
         if method == "exact":
-            return self._exact_discretize(dynamical_sys, lin_point)
-        if method == "euler":
-            return self._euler_discretize(dynamical_sys, lin_point)
+            method_fn = self._exact_discretize
+        elif method == "euler":
+            method_fn = self._euler_discretize
         else:
             raise ValueError(f"Unknown discretization method: {method}")
-
-    def _exact_discretize(self,
-                          dynamical_sys: LinearSystem,
-                          lin_point: InputValues,
-                          ) -> DiscreteLinearEnvMatrices:
-        n_state = dynamical_sys.a_matrix.shape[0]
-        n_action = dynamical_sys.b_matrix.shape[1]
-        n_noise = dynamical_sys.e_matrix.shape[1]
-
-        values = self.fill_symbols(lin_point)
-        cont_a_matrix = np.array(dynamical_sys.a_matrix.evalf(subs=values), dtype=np.float64)
-        cont_b_matrix = np.array(dynamical_sys.b_matrix.evalf(subs=values), dtype=np.float64)
-        cont_e_matrix = np.array(dynamical_sys.e_matrix.evalf(subs=values), dtype=np.float64)
-        cont_c_matrix = np.array(dynamical_sys.c_matrix.evalf(subs=values), dtype=np.float64)
-        cont_d_matrix = np.array(dynamical_sys.d_matrix.evalf(subs=values), dtype=np.float64)
-
-        matrix = np.zeros((n_state + n_action + n_noise, n_state + n_action + n_noise))
-        matrix[:n_state, :n_state] = cont_a_matrix
-        matrix[:n_state, n_state:-n_noise] = cont_b_matrix
-        matrix[:n_state, n_state + n_action:] = cont_e_matrix
-
-        dt = values["dt"]
-        exp_matrix = scipy.linalg.expm(matrix * dt)
-        discerete_a_matrix = exp_matrix[:n_state, :n_state]
-        discerete_b_matrix = exp_matrix[:n_state, n_state:-n_noise]
-        discerete_e_matrix = exp_matrix[:n_state, n_state + n_noise:]
+        discrete_matrices = method_fn(continouos_matrices, x_dot_zero, dt=values["dt"])
+        constants = discrete_matrices.pop("constants")
 
         return DiscreteLinearEnvMatrices(
+            **discrete_matrices,
+            lin_input=lin_point,
+            nonlinear_dyn=constants,
+            nonlinear_out=y_zero.flatten()
+        )
+
+    def _exact_discretize(self,
+                          continouos_matrices: Dict[str, np.ndarray],
+                          x_dot_zero: np.ndarray,
+                          dt: float,
+                          ) -> Dict[str, np.ndarray]:
+        n_state = continouos_matrices["a"].shape[0]
+        n_action = continouos_matrices["b"].shape[1]
+        n_noise = continouos_matrices["e"].shape[1]
+
+        n_size = n_state * 2 + n_action + n_noise
+        matrix = np.zeros((n_size, n_size))
+        matrix[:n_state, :n_state] = continouos_matrices["a"]
+        matrix[:n_state, n_state: 2 * n_state] = np.eye(n_state)
+        matrix[:n_state, 2 * n_state:-n_noise] = continouos_matrices["b"]
+        matrix[:n_state, 2 * n_state + n_action:] = continouos_matrices["e"]
+
+        exp_matrix = scipy.linalg.expm(matrix * dt)
+        discerete_a_matrix = exp_matrix[:n_state, :n_state]
+        discerete_b_matrix = exp_matrix[:n_state, 2 * n_state:-n_noise]
+        exp_a = exp_matrix[:n_state, n_state: 2 * n_state]
+        discerete_e_matrix = exp_matrix[:n_state, 2 * n_state + n_action:]
+
+        return dict(
             a_matrix=discerete_a_matrix,
             b_matrix=discerete_b_matrix,
-            e_matrix=cont_e_matrix,
-            c_matrix=cont_c_matrix,
-            d_matrix=cont_d_matrix,
+            e_matrix=discerete_e_matrix,
+            c_matrix=continouos_matrices["c"],
+            d_matrix=continouos_matrices["d"],
+            constants=(exp_a @ x_dot_zero)
         )
 
     def _euler_discretize(self,
-                          dynamical_sys: LinearSystem,
-                          lin_point: InputValues,
-                          ) -> DiscreteLinearEnvMatrices:
-        n_state = dynamical_sys.a_matrix.shape[0]
-        n_action = dynamical_sys.b_matrix.shape[1]
-        n_noise = dynamical_sys.e_matrix.shape[1]
-
-        values = self.fill_symbols(lin_point)
-        cont_a_matrix = np.array(dynamical_sys.a_matrix.evalf(subs=values), dtype=np.float64)
-        cont_b_matrix = np.array(dynamical_sys.b_matrix.evalf(subs=values), dtype=np.float64)
-        cont_e_matrix = np.array(dynamical_sys.e_matrix.evalf(subs=values), dtype=np.float64)
-        cont_c_matrix = np.array(dynamical_sys.c_matrix.evalf(subs=values), dtype=np.float64)
-        cont_d_matrix = np.array(dynamical_sys.d_matrix.evalf(subs=values), dtype=np.float64)
-
-        dt = values["dt"]
-        return DiscreteLinearEnvMatrices(
-            a_matrix=np.eye(n_state) + cont_a_matrix * dt,
-            b_matrix=cont_b_matrix * dt,
-            e_matrix=cont_e_matrix * dt,
-            c_matrix=cont_c_matrix,
-            d_matrix=cont_d_matrix,
+                          continouos_matrices: Dict[str, np.ndarray],
+                          dt: float,
+                          *args,
+                          ) -> Dict[str, np.ndarray]:
+        raise NotImplementedError
+        return dict(
+            a_matrix=np.eye(continouos_matrices["a"].shape[0]) + continouos_matrices["a"] * dt,
+            b_matrix=continouos_matrices["b"] * dt,
+            e_matrix=continouos_matrices["e"] * dt,
+            c_matrix=continouos_matrices["c"],
+            d_matrix=continouos_matrices["d"],
         )

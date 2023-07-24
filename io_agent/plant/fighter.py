@@ -4,46 +4,56 @@ from dataclasses import asdict
 import numpy as np
 import sympy
 from gymnasium import spaces
+import scipy
+
 
 from io_agent.plant.base import (Plant,
-                                 LinearSystem,
                                  QuadraticCosts,
                                  LinearConstraints,
                                  DynamicalSystem,
                                  SystemInput,
                                  InputValues,
-                                 EnvMatrices,
-                                 DiscreteLinearEnvMatrices)
+                                 LinearSystem,
+                                 NominalLinearEnvParams)
 
 
-fighter_system = LinearSystem(
-    a_matrix=sympy.Matrix([
-        [-0.0226, -36.6170, -18.8970, -32.0900, 3.2509, -0.7626],
-        [0.0001, -1.8997, 0.9831, -0.0007, -0.1708, -0.0050],
-        [0.0123, 11.7200, -2.6316, 0.0009, -31.6040, 22.3960],
-        [0, 0, 1, 0, 0, 0],
-        [0, 0, 0, 0, -30, 0],
-        [0, 0, 0, 0, 0, -30],
-    ]),
-    b_matrix=sympy.Matrix([
-        [0, 0],
-        [0, 0],
-        [0, 0],
-        [0, 0],
-        [30, 0],
-        [0, 30],
-    ]),
-    e_matrix=sympy.Matrix([
-        [0, 0],
-        [0, 0],
-        [1, 0],
-        [0, 1],
-        [0, 0],
-        [0, 0],
-    ]),
-    c_matrix=sympy.eye(6),
-    d_matrix=sympy.zeros(6, 2)
-)
+cont_a_matrix = sympy.Matrix([
+    [-0.0226, -36.6170, -18.8970, -32.0900, 3.2509, -0.7626],
+    [0.0001, -1.8997, 0.9831, -0.0007, -0.1708, -0.0050],
+    [0.0123, 11.7200, -2.6316, 0.0009, -31.6040, 22.3960],
+    [0, 0, 1, 0, 0, 0],
+    [0, 0, 0, 0, -30, 0],
+    [0, 0, 0, 0, 0, -30],
+])
+cont_b_matrix = sympy.Matrix([
+    [0, 0],
+    [0, 0],
+    [0, 0],
+    [0, 0],
+    [30, 0],
+    [0, 30],
+])
+
+def make_e_matrix(cont_a_matrix: sympy.Matrix):
+    m = np.zeros((6 + 6, 6 + 6))
+    m[:6, :6] = cont_a_matrix
+    m[:6, 6:] = np.eye(6)
+    exp_matrix = scipy.linalg.expm(m * 0.035)
+    disc_lambda = exp_matrix[:6, 6:]
+
+    disc_e_matrix = sympy.Matrix([
+            [0, 0],
+            [0, 0],
+            [1, 0],
+            [0, 1],
+            [0, 0],
+            [0, 0],
+        ])
+    return np.linalg.inv(disc_lambda) @ disc_e_matrix
+
+cont_e_matrix = make_e_matrix(cont_a_matrix)
+cont_c_matrix = sympy.eye(6)
+cont_d_matrix = sympy.zeros(6, 2)
 
 costs = QuadraticCosts(
     state=np.diag([1, 1000,  100, 1000, 1, 1]),
@@ -85,11 +95,8 @@ class FighterEnv(Plant):
                  disturbance_bias: Optional[np.ndarray] = None,
                  rng: Optional[np.random.Generator] = None,
                  ) -> None:
-        self.n_state = 6
-        self.n_action = 2
-        self.n_noise = 2
-        self.observation_space = spaces.Box(-np.inf, np.inf, shape=(self.n_state,), dtype=float)
-        self.action_space = spaces.Box(-np.inf, np.inf, shape=(self.n_action,), dtype=float)
+        self.observation_space = spaces.Box(-np.inf, np.inf, shape=(self.state_size,), dtype=float)
+        self.action_space = spaces.Box(-np.inf, np.inf, shape=(self.action_size,), dtype=float)
         if rng is None:
             rng = np.random.default_rng()
             warn("Setting a random seed")
@@ -108,51 +115,56 @@ class FighterEnv(Plant):
         if disturbance_bias is not None:
             self.state_disturbance += disturbance_bias
         self.output_disturbance = np.zeros(
-            (self.n_state, self.max_length * 2 + 1))
-        self.action_disturbance = np.zeros((self.n_action, self.max_length * 2))
-        reference_sequence = np.zeros((self.n_state, self.max_length * 2))
+            (self.state_size, self.max_length * 2 + 1))
+        self.action_disturbance = np.zeros((self.action_size, self.max_length * 2))
+        reference_sequence = np.zeros((self.state_size, self.max_length * 2))
         super().__init__(costs=costs, constraints=constraints, reference_sequence=reference_sequence)
 
-        discerete_system = self.discretize(
-            fighter_system,
+        # Since Fighter is a linear model we only discretize the system once
+        self._nominal_model = super().nominal_model(
             lin_point=InputValues(
-                state=np.zeros((6,)),
-                action=np.zeros((2,)),
-                noise=np.zeros((2,)),
+                state=np.ones((6,)),
+                action=np.ones((2,)),
+                noise=np.ones((2,)),
             ),
-            method="exact")
-        self.env_params = EnvMatrices(
-            **asdict(discerete_system),
-            **asdict(constraints),
-            state_cost=costs.state,
-            action_cost=costs.action,
-            final_cost=costs.final,
-        )
+            discretization_method="exact")
+
+    def nominal_model(self, lin_point: Optional[InputValues] = None):
+        return self._nominal_model
 
     def symbolic_dynamical_system(self) -> DynamicalSystem:
-
         state = sympy.Matrix(sympy.symbols(" ".join([f"x_{index+1}" for index in range(6)])))
         action = sympy.Matrix(sympy.symbols(" ".join([f"u_{index+1}" for index in range(2)])))
         noise = sympy.Matrix(sympy.symbols(" ".join([f"w_{index+1}" for index in range(2)])))
+        state_dot = sympy.Matrix(sympy.symbols(" ".join(["\dot{x}_" + f"{index+1}"
+                                                         for index in range(6)])))
         return DynamicalSystem(
             sys_input=SystemInput(
                 state=state,
                 action=action,
                 noise=noise,
+                state_dot=state_dot,
             ),
-            dyn_eq=(fighter_system.a_matrix @ state
-                    + fighter_system.b_matrix @ action
-                    + fighter_system.e_matrix @ noise),
-            out_eq=(fighter_system.c_matrix @ state + fighter_system.d_matrix @ action)
+            dyn_eq=cont_a_matrix @ state
+            + cont_b_matrix @ action
+            + cont_e_matrix @ noise,
+            out_eq=(cont_c_matrix @ state_dot + cont_d_matrix @ action)
         )
 
-    def fill_symbols(self, input_values: InputValues) -> Dict[str, Union[float, np.ndarray]]:
-        return dict(
+    def fill_symbols(self,
+                     input_values: InputValues,
+                     dynamic_system: LinearSystem
+                     ) -> Dict[str, Union[float, np.ndarray]]:
+        values = dict(
             **{f"x_{index+1}": value for index, value in enumerate(input_values.state.flatten())},
             **{f"u_{index+1}": value for index, value in enumerate(input_values.action.flatten())},
             **{f"w_{index+1}": value for index, value in enumerate(input_values.noise.flatten())},
             dt=0.035,
         )
+        state_dot = self._evaluate_sym(dynamic_system.nonlinear_dyn, values=values)
+        values.update({"\dot{x}_" + f"{index+1}": value
+                       for index, value in enumerate(state_dot.flatten())})
+        return values
 
     def _generate_state_disturbance(self, rng: np.random.Generator) -> np.ndarray:
         """ Generate random time varying noise
@@ -173,7 +185,7 @@ class FighterEnv(Plant):
             np.ndarray: Output array of shape (S,)
                 where S denotes the state/input size
         """
-        return self.env_params.c_matrix @ self.state + self.output_disturbance[:, self.iteration]
+        return self._nominal_model.matrices.c_matrix @ self.state + self.output_disturbance[:, self.iteration]
 
     def reset(self,
               seed: Optional[int] = None,
@@ -194,7 +206,7 @@ class FighterEnv(Plant):
         super().reset(seed=seed)
         self.iteration = 0
         rng = np.random.default_rng(seed)
-        self.state = rng.random(self.n_state) / 10
+        self.state = rng.random(self.state_size) / 10
         info = None
         return self._measure(), info
 
@@ -226,16 +238,24 @@ class FighterEnv(Plant):
         state_noise = self.state_disturbance[:, self.iteration]
         reference = self.reference_sequence[:, self.iteration]
 
-        next_state = self.env_params.a_matrix @ self.state + self.env_params.b_matrix @ noisy_action + \
-            self.env_params.e_matrix @ state_noise
-        difference = (self.state - reference)
-        cost = (difference.T.dot(self.env_params.state_cost).dot(difference)
-                + noisy_action.T.dot(self.env_params.action_cost).dot(noisy_action))
+        lin_state = self._nominal_model.matrices.lin_input.state  # Linearization point of the state
+        lin_next_state = self._nominal_model.matrices.nonlinear_dyn  # Linearization point of the next_state
+        lin_action = self._nominal_model.matrices.lin_input.action  # Linearization point of the action
+        lin_noise = self._nominal_model.matrices.lin_input.noise  # Linearization point of the noise
+        lin_output = self._nominal_model.matrices.nonlinear_out  # Linearization point of the output
+
+        next_state_delta = (self._nominal_model.matrices.a_matrix @ (self.state - lin_state)
+                            + self._nominal_model.matrices.b_matrix @ (noisy_action - lin_action)
+                            + self._nominal_model.matrices.e_matrix @ (state_noise - lin_noise)
+                            + lin_next_state)
+        self.state = next_state_delta + lin_state
+        measurement = self._measure()
+        difference = (measurement - reference)
+        cost = (difference.T.dot(self._nominal_model.costs.state).dot(difference)
+                + noisy_action.T.dot(self._nominal_model.costs.action).dot(noisy_action))
+
         self.iteration += 1
         truncation = self.iteration == self.max_length
         terminal = False
         info = None
-
-        self.state = next_state
-
-        return self._measure(), cost, truncation, terminal, info
+        return measurement, cost, truncation, terminal, info

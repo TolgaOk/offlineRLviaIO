@@ -7,7 +7,7 @@ from gymnasium import spaces
 from dataclasses import dataclass, asdict
 from collections import deque
 
-from io_agent.plant.base import EnvMatrices
+from io_agent.plant.base import NominalLinearEnvParams
 from io_agent.control.mpc import Optimizer
 from io_agent.utils import FeatureHandler, AugmentedTransition
 from io_agent.evaluator import Transition
@@ -19,12 +19,12 @@ class IOController():
     """ Inverse Optimization based controller agent
 
     Args:
-        env_params (EnvMatrices): Linear environment parameters
+        params (NominalLinearEnvParams): Linear environment parameters
         dataset_length (int): MPC dataset_length
     """
 
     def __init__(self,
-                 env_params: EnvMatrices,
+                 params: NominalLinearEnvParams,
                  dataset_length: int,
                  feature_handler: FeatureHandler,
                  include_constraints: bool = True,
@@ -40,12 +40,12 @@ class IOController():
         self.soften_state_constraints = soften_state_constraints
         self.softening_penalty = softening_penalty
         self.dataset_length = dataset_length
-        self.env_params = env_params
+        self.params = params
         self.horizon = None  # For compatibility with the ControlLoop class
 
         self.polytope_size = (
-            env_params.action_constraint_vector.shape[0] * int(action_constraints_flag)
-            + env_params.state_constraint_vector.shape[0] * int(state_constraints_flag)
+            params.constraints.action_constraint_vector.shape[0] * int(action_constraints_flag)
+            + params.constraints.state_constraint_vector.shape[0] * int(state_constraints_flag)
         )
         self.action_size = self.feature_handler.action_size
         self.state_size = self.feature_handler.state_size
@@ -129,10 +129,10 @@ class IOController():
         )
 
         if self.state_constraints_flag and self.soften_state_constraints:
-            slack_state = cp.Variable(self.env_params.state_constraint_vector.shape[0])
+            slack_state = cp.Variable(self.params.constraints.state_constraint_vector.shape[0])
             objective += + self.softening_penalty * cp.norm(slack_state, 2)**2
             slack_action = cp.Variable(
-                self.polytope_size - self.env_params.state_constraint_vector.shape[0])
+                self.polytope_size - self.params.constraints.state_constraint_vector.shape[0])
             slack = cp.hstack([slack_action, slack_state])
 
         constraints = []
@@ -172,15 +172,15 @@ class IOController():
         constraint_vectors = []
         if self.state_constraints_flag:
             constraint_matrices.append(
-                self.env_params.state_constraint_matrix @ self.env_params.b_matrix
+                self.params.constraints.state_constraint_matrix @ self.params.matrices.b_matrix
             )
             constraint_vectors.append(
-                self.env_params.state_constraint_vector
-                - self.env_params.state_constraint_matrix @ self.env_params.a_matrix @ state
+                self.params.constraints.state_constraint_vector
+                - self.params.constraints.state_constraint_matrix @ self.params.matrices.a_matrix @ state
             )
         if self.action_constraints_flag:
-            constraint_matrices.append(self.env_params.action_constraint_matrix)
-            constraint_vectors.append(self.env_params.action_constraint_vector)
+            constraint_matrices.append(self.params.constraints.action_constraint_matrix)
+            constraint_vectors.append(self.params.constraints.action_constraint_vector)
         constraint_matrix = np.concatenate(constraint_matrices, axis=0)
         constraint_vector = np.concatenate(constraint_vectors, axis=0)
         return (constraint_matrix, constraint_vector)
