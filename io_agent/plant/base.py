@@ -1,4 +1,4 @@
-from typing import Optional, Dict, Union, Tuple
+from typing import Optional, Dict, Union, Tuple, Any
 import numpy as np
 from dataclasses import dataclass, asdict
 from abc import abstractmethod
@@ -34,7 +34,6 @@ class SystemInput():
     state: sympy.Matrix
     action: sympy.Matrix
     noise: sympy.Matrix
-    state_dot: sympy.Matrix
 
 
 @dataclass
@@ -49,30 +48,39 @@ class DynamicalSystem():
 
 
 @dataclass
-class LinearSystem():
+class AffineSystem():
     """ Linear system matrices that yield following linear equations
-        \dot{x}(t) = Ax(t) + Bu(t) + Ew(t)
-        y(t) = Cx(t) + Du(t)
+        \dot{x}(t) = Ax(t) + Bu(t) + Ew(t) + K
+        y(t) = Cx(t) + Du(t) + L
+        where K and L are constant vectors.
     """
     a_matrix: sympy.Matrix
     b_matrix: sympy.Matrix
     e_matrix: sympy.Matrix
     c_matrix: sympy.Matrix
     d_matrix: sympy.Matrix
-    nonlinear_dyn: sympy.Matrix
-    nonlinear_out: sympy.Matrix
+    dyn_constant: sympy.Matrix
+    out_constant: sympy.Matrix
 
 
 @dataclass
-class DiscreteLinearEnvMatrices():
+class AffineDiscreteSystem():
     a_matrix: np.ndarray
     b_matrix: np.ndarray
     e_matrix: np.ndarray
     c_matrix: np.ndarray
     d_matrix: np.ndarray
-    lin_input: InputValues
-    nonlinear_dyn: np.ndarray
-    nonlinear_out: np.ndarray
+    dyn_constant: np.ndarray
+    out_constant: np.ndarray
+
+
+@dataclass
+class LinearDiscreteSystem():
+    a_matrix: np.ndarray
+    b_matrix: np.ndarray
+    e_matrix: np.ndarray
+    c_matrix: np.ndarray
+    d_matrix: np.ndarray
 
 
 @dataclass
@@ -91,17 +99,15 @@ class NominalLinearEnvParams():
         matrix, h_u denotes the action constraints and w denotes the state
         disturbance, and u denotes the action/input.
     """
-    matrices: DiscreteLinearEnvMatrices
+    matrices: LinearDiscreteSystem
     constraints: LinearConstraints
     costs: QuadraticCosts
 
 
 class Plant(gym.Env):
-
     state_size: int
     action_size: int
     noise_size: int
-    ref_size: int
     output_size: int
 
     def __init__(self,
@@ -116,9 +122,26 @@ class Plant(gym.Env):
         self.reference_sequence = reference_sequence
         super().__init__()
 
-    def nominal_model(self, lin_point: InputValues, discretization_method: str = "exact") -> NominalLinearEnvParams:
-        linear_system = self.linearize(self.symbolic_dynamical_system())
-        discerete_matrices = self.discretize(
+    @abstractmethod
+    def symbolic_dynamical_system(self) -> DynamicalSystem:
+        raise NotImplementedError
+
+    @abstractmethod
+    def fill_symbols(self,
+                     input_values: InputValues,
+                     dynamical_sys: DynamicalSystem
+                     ) -> Dict[str, Union[float, np.ndarray]]:
+        raise NotImplementedError
+
+    def nominal_model(self, *args, **kwargs) -> Any:
+        raise NotImplementedError
+
+    def linearization(self,
+                      lin_point: InputValues,
+                      discretization_method: str = "exact"
+                      ) -> NominalLinearEnvParams:
+        linear_system = self.affinization(self.symbolic_dynamical_system())
+        discerete_matrices = self.discretization(
             linear_system,
             lin_point=lin_point,
             method=discretization_method)
@@ -128,74 +151,60 @@ class Plant(gym.Env):
             costs=self.costs
         )
 
-    @abstractmethod
-    def symbolic_dynamical_system(self) -> DynamicalSystem:
-        raise NotImplementedError
-
-    @abstractmethod
-    def fill_symbols(self,
-                     input_values: InputValues,
-                     dynamical_sys: LinearSystem
-                     ) -> Dict[str, Union[float, np.ndarray]]:
-        raise NotImplementedError
-
-    def linearize(self, dynamical_sys: DynamicalSystem) -> LinearSystem:
+    def affinization(self, dynamical_sys: DynamicalSystem) -> AffineSystem:
         state = dynamical_sys.sys_input.state
         action = dynamical_sys.sys_input.action
         noise = dynamical_sys.sys_input.noise
-        next_state = dynamical_sys.sys_input.state_dot
 
         jac_dyn_a = dynamical_sys.dyn_eq.jacobian(state)
         jac_dyn_b = dynamical_sys.dyn_eq.jacobian(action)
         jac_dyn_e = dynamical_sys.dyn_eq.jacobian(noise)
-        jac_out_c = dynamical_sys.out_eq.jacobian(next_state)
+        jac_out_c = dynamical_sys.out_eq.jacobian(state)
         jac_out_d = dynamical_sys.out_eq.jacobian(action)
 
-        return LinearSystem(
+        return AffineSystem(
             a_matrix=jac_dyn_a,
             b_matrix=jac_dyn_b,
             e_matrix=jac_dyn_e,
             c_matrix=jac_out_c,
             d_matrix=jac_out_d,
-            nonlinear_dyn=dynamical_sys.dyn_eq,
-            nonlinear_out=dynamical_sys.out_eq,
+            dyn_constant=dynamical_sys.dyn_eq - (
+                jac_dyn_a @ state +
+                jac_dyn_b @ action +
+                jac_dyn_e @ noise),
+            out_constant=dynamical_sys.out_eq - (
+                jac_out_c @ state +
+                jac_out_d @ action),
         )
 
     def _evaluate_sym(self, sym: sympy.Matrix, values: Dict[str, Union[np.ndarray, float]]) -> Union[np.ndarray, float]:
         return np.array(sym.evalf(subs=values), dtype=np.float64)
 
-    def discretize(self,
-                   dynamical_sys: LinearSystem,
-                   lin_point: InputValues,
-                   method: str = "exact"
-                   ) -> DiscreteLinearEnvMatrices:
-        values = self.fill_symbols(lin_point, dynamical_sys)
-        continouos_matrices = {key: self._evaluate_sym(getattr(dynamical_sys, f"{key}_matrix"), values)
+    def discretization(self,
+                       affine_sys: AffineSystem,
+                       lin_point: InputValues,
+                       method: str = "exact"
+                       ) -> AffineDiscreteSystem:
+        values = self.fill_symbols(lin_point, affine_sys)
+        continouos_matrices = {key: self._evaluate_sym(getattr(affine_sys, f"{key}_matrix"), values)
                                for key in ("a", "b", "c", "e", "d")}
-        x_dot_zero = self._evaluate_sym(dynamical_sys.nonlinear_dyn, values).flatten()
-        y_zero = self._evaluate_sym(dynamical_sys.nonlinear_out, values)
+        constants = {f"{prefix}_constant": self._evaluate_sym(getattr(affine_sys, f"{prefix}_constant"), values).flatten()
+                     for prefix in ("dyn", "out")}
 
         if method == "exact":
-            method_fn = self._exact_discretize
+            method_fn = self._exact_discretization
         elif method == "euler":
-            method_fn = self._euler_discretize
+            raise NotImplementedError
+            method_fn = self._euler_discretization
         else:
             raise ValueError(f"Unknown discretization method: {method}")
-        discrete_matrices = method_fn(continouos_matrices, x_dot_zero, dt=values["dt"])
-        constants = discrete_matrices.pop("constants")
+        return method_fn(continouos_matrices, constants, dt=values["dt"])
 
-        return DiscreteLinearEnvMatrices(
-            **discrete_matrices,
-            lin_input=lin_point,
-            nonlinear_dyn=constants,
-            nonlinear_out=y_zero.flatten()
-        )
-
-    def _exact_discretize(self,
-                          continouos_matrices: Dict[str, np.ndarray],
-                          x_dot_zero: np.ndarray,
-                          dt: float,
-                          ) -> Dict[str, np.ndarray]:
+    def _exact_discretization(self,
+                              continouos_matrices: Dict[str, np.ndarray],
+                              constants: Dict[str, np.ndarray],
+                              dt: float,
+                              ) -> AffineDiscreteSystem:
         n_state = continouos_matrices["a"].shape[0]
         n_action = continouos_matrices["b"].shape[1]
         n_noise = continouos_matrices["e"].shape[1]
@@ -213,20 +222,21 @@ class Plant(gym.Env):
         exp_a = exp_matrix[:n_state, n_state: 2 * n_state]
         discerete_e_matrix = exp_matrix[:n_state, 2 * n_state + n_action:]
 
-        return dict(
+        return AffineDiscreteSystem(
             a_matrix=discerete_a_matrix,
             b_matrix=discerete_b_matrix,
             e_matrix=discerete_e_matrix,
             c_matrix=continouos_matrices["c"],
             d_matrix=continouos_matrices["d"],
-            constants=(exp_a @ x_dot_zero)
+            dyn_constant=(exp_a @ np.diag(constants["dyn_constant"])),
+            out_constant=(np.diag(constants["out_constant"]))
         )
 
-    def _euler_discretize(self,
-                          continouos_matrices: Dict[str, np.ndarray],
-                          dt: float,
-                          *args,
-                          ) -> Dict[str, np.ndarray]:
+    def _euler_discretization(self,
+                              continouos_matrices: Dict[str, np.ndarray],
+                              dt: float,
+                              *args,
+                              ) -> AffineDiscreteSystem:
         raise NotImplementedError
         return dict(
             a_matrix=np.eye(continouos_matrices["a"].shape[0]) + continouos_matrices["a"] * dt,
@@ -235,3 +245,82 @@ class Plant(gym.Env):
             c_matrix=continouos_matrices["c"],
             d_matrix=continouos_matrices["d"],
         )
+
+    def augmentation(self,
+                     affine_dsc_sys: AffineDiscreteSystem,
+                     costs: QuadraticCosts,
+                     constraints: LinearConstraints
+                     ) -> NominalLinearEnvParams:
+
+        return NominalLinearEnvParams(
+            matrices=LinearDiscreteSystem(
+                a_matrix=np.block([
+                    [affine_dsc_sys.a_matrix, affine_dsc_sys.dyn_constant],
+                    [np.zeros_like(affine_dsc_sys.dyn_constant.T), np.eye(self.state_size)]
+                ]),
+                b_matrix=np.block([
+                    [affine_dsc_sys.b_matrix],
+                    [np.zeros_like(affine_dsc_sys.b_matrix)]
+                ]),
+                e_matrix=np.block([
+                    [affine_dsc_sys.e_matrix],
+                    [np.zeros_like(affine_dsc_sys.e_matrix)]
+                ]),
+                c_matrix=np.block([
+                    [affine_dsc_sys.c_matrix, affine_dsc_sys.out_constant],
+                    [np.zeros_like(affine_dsc_sys.out_constant.T), np.eye(self.state_size)]
+                ]),
+                d_matrix=np.block([
+                    [affine_dsc_sys.d_matrix],
+                    [np.zeros_like(affine_dsc_sys.d_matrix)]
+                ])
+            ),
+            costs=QuadraticCosts(
+                state=np.block([
+                    [costs.state, np.zeros_like(costs.state)],
+                    [np.zeros_like(costs.state), np.zeros_like(costs.state)]
+                ]),
+                action=costs.action,
+                final=np.block([
+                    [costs.final, np.zeros_like(costs.final)],
+                    [np.zeros_like(costs.final), np.zeros_like(costs.final)]
+                ]),
+            ),
+            constraints=LinearConstraints(
+                state_constraint_matrix=np.block([
+                    [constraints.state_constraint_matrix, np.zeros_like(
+                        constraints.state_constraint_matrix)]
+                ]),
+                state_constraint_vector=constraints.state_constraint_vector,
+                action_constraint_matrix=constraints.action_constraint_matrix,
+                action_constraint_vector=constraints.action_constraint_vector,
+            )
+        )
+
+
+class LinearizationWrapper(gym.ObservationWrapper):
+
+    def __init__(self, env: Plant):
+        if not isinstance(env.observation_space, gym.spaces.Box):
+            raise ValueError("Plant must have Box observation shape!")
+        if len(env.observation_space.shape) != 1:
+            raise ValueError("Plant must be 1 dimensinoal shape!")
+        super().__init__(env)
+        self.observation_space = gym.spaces.Box(
+            shape=(env.state_size * 2,),
+            low=np.concatenate(env.observation_space.low,
+                               np.ones(env.observation_space.low)),
+            high=np.concatenate(env.observation_space.high,
+                                np.ones(env.observation_space.high))
+        )
+
+    def observation(self, obs: np.ndarray) -> np.ndarray:
+        return np.concatenate(obs, np.ones_like(obs))
+
+    def nominal_model(self,
+                      lin_point: InputValues,
+                      discretization_method: str = "exact"
+                      ) -> NominalLinearEnvParams:
+        return self.env.linearization(
+            lin_point=lin_point,
+            discretization_method=discretization_method)

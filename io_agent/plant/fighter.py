@@ -10,10 +10,12 @@ import scipy
 from io_agent.plant.base import (Plant,
                                  QuadraticCosts,
                                  LinearConstraints,
-                                 DynamicalSystem,
-                                 SystemInput,
                                  InputValues,
-                                 LinearSystem,
+                                 SystemInput,
+                                 DynamicalSystem,
+                                 AffineSystem,
+                                 AffineDiscreteSystem,
+                                 LinearDiscreteSystem,
                                  NominalLinearEnvParams)
 
 
@@ -34,6 +36,7 @@ cont_b_matrix = sympy.Matrix([
     [0, 30],
 ])
 
+
 def make_e_matrix(cont_a_matrix: sympy.Matrix):
     m = np.zeros((6 + 6, 6 + 6))
     m[:6, :6] = cont_a_matrix
@@ -42,14 +45,15 @@ def make_e_matrix(cont_a_matrix: sympy.Matrix):
     disc_lambda = exp_matrix[:6, 6:]
 
     disc_e_matrix = sympy.Matrix([
-            [0, 0],
-            [0, 0],
-            [1, 0],
-            [0, 1],
-            [0, 0],
-            [0, 0],
-        ])
+        [0, 0],
+        [0, 0],
+        [1, 0],
+        [0, 1],
+        [0, 0],
+        [0, 0],
+    ])
     return np.linalg.inv(disc_lambda) @ disc_e_matrix
+
 
 cont_e_matrix = make_e_matrix(cont_a_matrix)
 cont_c_matrix = sympy.eye(6)
@@ -121,13 +125,25 @@ class FighterEnv(Plant):
         super().__init__(costs=costs, constraints=constraints, reference_sequence=reference_sequence)
 
         # Since Fighter is a linear model we only discretize the system once
-        self._nominal_model = super().nominal_model(
+        affine_sys = self.affinization(self.symbolic_dynamical_system())
+        disc_affine_model = self.discretization(
+            affine_sys=affine_sys,
             lin_point=InputValues(
-                state=np.ones((6,)),
-                action=np.ones((2,)),
-                noise=np.ones((2,)),
-            ),
-            discretization_method="exact")
+                state=np.zeros((6,)),
+                action=np.zeros((2,)),
+                noise=np.zeros((2,)),
+            )
+        )
+        self._nominal_model = NominalLinearEnvParams(
+            matrices=LinearDiscreteSystem(
+                a_matrix=disc_affine_model.a_matrix,
+                b_matrix=disc_affine_model.b_matrix,
+                c_matrix=disc_affine_model.c_matrix,
+                d_matrix=disc_affine_model.d_matrix,
+                e_matrix=disc_affine_model.e_matrix),
+            constraints=self.constraints,
+            costs=self.costs
+        )
 
     def nominal_model(self, lin_point: Optional[InputValues] = None):
         return self._nominal_model
@@ -136,24 +152,22 @@ class FighterEnv(Plant):
         state = sympy.Matrix(sympy.symbols(" ".join([f"x_{index+1}" for index in range(6)])))
         action = sympy.Matrix(sympy.symbols(" ".join([f"u_{index+1}" for index in range(2)])))
         noise = sympy.Matrix(sympy.symbols(" ".join([f"w_{index+1}" for index in range(2)])))
-        state_dot = sympy.Matrix(sympy.symbols(" ".join(["\dot{x}_" + f"{index+1}"
-                                                         for index in range(6)])))
+
         return DynamicalSystem(
             sys_input=SystemInput(
                 state=state,
                 action=action,
                 noise=noise,
-                state_dot=state_dot,
             ),
             dyn_eq=cont_a_matrix @ state
             + cont_b_matrix @ action
             + cont_e_matrix @ noise,
-            out_eq=(cont_c_matrix @ state_dot + cont_d_matrix @ action)
+            out_eq=(cont_c_matrix @ state + cont_d_matrix @ action)
         )
 
     def fill_symbols(self,
                      input_values: InputValues,
-                     dynamic_system: LinearSystem
+                     dynamic_system: AffineSystem
                      ) -> Dict[str, Union[float, np.ndarray]]:
         values = dict(
             **{f"x_{index+1}": value for index, value in enumerate(input_values.state.flatten())},
@@ -161,7 +175,7 @@ class FighterEnv(Plant):
             **{f"w_{index+1}": value for index, value in enumerate(input_values.noise.flatten())},
             dt=0.035,
         )
-        state_dot = self._evaluate_sym(dynamic_system.nonlinear_dyn, values=values)
+        state_dot = self._evaluate_sym(dynamic_system.dyn_constant, values=values)
         values.update({"\dot{x}_" + f"{index+1}": value
                        for index, value in enumerate(state_dot.flatten())})
         return values
@@ -238,17 +252,10 @@ class FighterEnv(Plant):
         state_noise = self.state_disturbance[:, self.iteration]
         reference = self.reference_sequence[:, self.iteration]
 
-        lin_state = self._nominal_model.matrices.lin_input.state  # Linearization point of the state
-        lin_next_state = self._nominal_model.matrices.nonlinear_dyn  # Linearization point of the next_state
-        lin_action = self._nominal_model.matrices.lin_input.action  # Linearization point of the action
-        lin_noise = self._nominal_model.matrices.lin_input.noise  # Linearization point of the noise
-        lin_output = self._nominal_model.matrices.nonlinear_out  # Linearization point of the output
-
-        next_state_delta = (self._nominal_model.matrices.a_matrix @ (self.state - lin_state)
-                            + self._nominal_model.matrices.b_matrix @ (noisy_action - lin_action)
-                            + self._nominal_model.matrices.e_matrix @ (state_noise - lin_noise)
-                            + lin_next_state)
-        self.state = next_state_delta + lin_state
+        next_state = (self._nominal_model.matrices.a_matrix @ self.state
+                      + self._nominal_model.matrices.b_matrix @ noisy_action
+                      + self._nominal_model.matrices.e_matrix @ state_noise)
+        self.state = next_state
         measurement = self._measure()
         difference = (measurement - reference)
         cost = (difference.T.dot(self._nominal_model.costs.state).dot(difference)
