@@ -94,26 +94,19 @@ class MPC():
         r_par = cp.Parameter((self.state_size, self.horizon))
         w_par = cp.Parameter((self.noise_size, self.horizon))
 
-        lin_state = params.matrices.lin_input.state  # Linearization point of the state
-        lin_next_state = params.matrices.nonlinear_dyn  # Linearization point of the next_state
-        lin_action = params.matrices.lin_input.action  # Linearization point of the action
-        lin_noise = params.matrices.lin_input.noise  # Linearization point of the noise
-        lin_output = params.matrices.nonlinear_out  # Linearization point of the output
-
-        state_delta = init_state - lin_state
+        state = init_state
         for step in range(self.horizon):
             action_var = cp.Variable((self.action_size), name=f"mu_{step+1}")
             action_list.append(action_var)
-            state_delta = (params.matrices.a_matrix @ (state_delta) +
-                           params.matrices.b_matrix @ (action_var - lin_action) +
-                           params.matrices.e_matrix @ (w_par[:, step] - lin_noise) +
-                           lin_next_state)
+            state = (params.matrices.a_matrix @ (state) +
+                     params.matrices.b_matrix @ action_var +
+                     params.matrices.e_matrix @ w_par[:, step])
             state_cost = (params.costs.state if step < self.horizon - 1
                           else params.costs.final)
-            cost = cost + cp.quad_form((state_delta + lin_state), state_cost)
+            cost = cost + cp.quad_form(state, state_cost)
             cost = cost + cp.quad_form(action_var, params.costs.action)
 
-            constraints += [params.constraints.state_constraint_matrix @ (state_delta + lin_state) <=
+            constraints += [params.constraints.state_constraint_matrix @ state <=
                             params.constraints.state_constraint_vector]
             constraints += [params.constraints.action_constraint_matrix @ action_var <=
                             params.constraints.action_constraint_vector]
