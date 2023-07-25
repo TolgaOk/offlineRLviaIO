@@ -3,7 +3,7 @@ import numpy as np
 from scipy.linalg import sqrtm
 import cvxpy as cp
 
-from io_agent.plant.base import EnvMatrices
+from io_agent.plant.base import NominalLinearEnvParams
 from io_agent.control.mpc import Optimizer, MPC
 
 
@@ -11,7 +11,6 @@ class RobustMPC(MPC):
     """ Robust Linear MPC agent
 
     Args:
-        env_params (EnvMatrices): Linear environment parameters
         horizon (int): MPC horizon
         rho (float): Disturbance uncertainty radius
         p_matrix (Optional[np.ndarray], optional): Disturbance uncertainty kernel . 
@@ -53,7 +52,7 @@ class RobustMPC(MPC):
             p_matrix = np.eye(self.noise_size)
         self.p_matrix = p_matrix
 
-    def _full_matrices(self, env_params: EnvMatrices) -> Tuple[np.ndarray]:
+    def _full_matrices(self, params: NominalLinearEnvParams) -> Tuple[np.ndarray]:
         """ Compose vectorized matrices
 
         Returns:
@@ -66,26 +65,27 @@ class RobustMPC(MPC):
         full_a = np.zeros((self.state_size * self.horizon, self.state_size))
         full_b = np.zeros((self.state_size * self.horizon, self.action_size * self.horizon))
         full_e = np.zeros((self.state_size * self.horizon, self.noise_size * self.horizon))
-        full_c = np.kron(np.eye(self.horizon), env_params.c_matrix)
+        full_c = np.kron(np.eye(self.horizon), params.matrices.c_matrix)
         full_p = np.kron(np.eye(self.horizon), self.p_matrix)
 
         for t in range(self.horizon):
             full_a[self.state_size * t:self.state_size *
-                   (t+1), :] = np.linalg.matrix_power(env_params.a_matrix, t+1)
+                   (t+1), :] = np.linalg.matrix_power(params.matrices.a_matrix, t+1)
             full_b += np.kron(
                 np.diag(np.ones(self.horizon-t), k=-t),
-                np.linalg.matrix_power(env_params.a_matrix, t) @ env_params.b_matrix)
+                np.linalg.matrix_power(params.matrices.a_matrix, t) @ params.matrices.b_matrix)
             full_e += np.kron(
                 np.diag(np.ones(self.horizon-t), k=-t),
-                np.linalg.matrix_power(env_params.a_matrix, t) @ env_params.e_matrix)
+                np.linalg.matrix_power(params.matrices.a_matrix, t) @ params.matrices.e_matrix)
         return full_a, full_b, full_e, full_c, full_p
 
-    def prepare_optimizer(self, env_params: EnvMatrices) -> Optimizer:
+    def prepare_optimizer(self, params: NominalLinearEnvParams) -> Optimizer:
         """ Prepare a parametric optimization problem for the robust mpc agent
 
         Returns:
             Optimizer: Optimization problem, parameters, and variables
         """
+        # raise NotImplementedError("Linearized dynamics are not implemented yet!")
         full_actions = cp.Variable((self.action_size, self.horizon))
         gamma_1 = cp.Variable(1)
         gamma_2 = cp.Variable(1)
@@ -95,14 +95,14 @@ class RobustMPC(MPC):
         r_par = cp.Parameter((self.state_size, self.horizon))
         w_par = cp.Parameter((self.noise_size, self.horizon))
 
-        full_a, full_b, full_e, full_c, full_p = self._full_matrices(env_params)
+        full_a, full_b, full_e, full_c, full_p = self._full_matrices(params)
 
-        full_action_cost = np.kron(np.eye(self.horizon), env_params.action_cost)
+        full_action_cost = np.kron(np.eye(self.horizon), params.costs.action)
         full_state_cost = np.block([
-            [np.kron(np.eye(self.horizon-1), env_params.state_cost),
+            [np.kron(np.eye(self.horizon-1), params.costs.state),
              np.zeros((self.state_size * (self.horizon - 1), self.state_size))],
             [np.zeros((self.state_size, self.state_size * (self.horizon - 1))),
-             env_params.final_cost]
+             params.costs.final]
         ])
 
         # First LMI constraint
@@ -150,17 +150,17 @@ class RobustMPC(MPC):
         constraints = [constraint_lambda, lmi_constraint_1, lmi_constraint_2]
         if self.input_constraints_flag:
             full_action_constraint_matrix = np.kron(
-                np.eye(self.horizon), env_params.action_constraint_matrix)
+                np.eye(self.horizon), params.constraints.action_constraint_matrix)
             full_action_constraint_vector = np.kron(
-                np.ones((self.horizon)), env_params.action_constraint_vector)
+                np.ones((self.horizon)), params.constraints.action_constraint_vector)
             constraints.append(full_action_constraint_matrix @
                                full_actions.flatten() <= full_action_constraint_vector)
 
         if self.state_constraints_flag:
             full_state_constraint_matrix = np.kron(
-                np.eye(self.horizon), env_params.state_constraint_matrix)
+                np.eye(self.horizon), params.constraints.state_constraint_matrix)
             full_state_constraint_vector = np.kron(
-                np.ones((self.horizon,)), env_params.state_constraint_vector)
+                np.ones((self.horizon,)), params.constraints.state_constraint_vector)
 
             # Robustify state constraints
             size = full_state_constraint_matrix.shape[0]

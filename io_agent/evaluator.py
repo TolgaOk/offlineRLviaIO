@@ -61,7 +61,7 @@ class ControlLoop():
         simulation_sequence = []
 
         if initial_state is None:
-            initial_state, _ = self.plant.reset(self.rng.integers(0, 2**30).item())
+            initial_state, _ = self.plant.reset(seed=self.rng.integers(0, 2**30).item())
         horizon = self.controller.horizon if self.controller.horizon is not None else 0
 
         self.controller.reset()
