@@ -23,7 +23,7 @@ class AugmentedTransition(Transition):
 class FeatureHandler():
 
     def __init__(self,
-                 env_params: NominalLinearEnvParams,
+                 params: NominalLinearEnvParams,
                  n_past: int,
                  add_bias: bool,
                  use_state_regressor: bool,
@@ -33,7 +33,7 @@ class FeatureHandler():
         """ Feature Handler for the IO agents
 
         Args:
-            env_params (NominalLinearEnvParams): Parameters that determines the behavior of the environment.
+            params (NominalLinearEnvParams): Parameters that determines the behavior of the environment.
             n_past (int): The history length of the augmented states
             add_bias (bool): Add bias to the (state features/augmented state)
             use_state_regressor (bool): Include past states to the (state features/augmented state)
@@ -41,16 +41,16 @@ class FeatureHandler():
             use_noise_regressor (bool): Include past noises to the (state features/augmented state)
 
         """
-        self.env_params = env_params
+        self.params = params
         self.n_past = n_past
         self.add_bias = add_bias
         self.use_state_regressor = use_state_regressor
         self.use_action_regressor = use_action_regressor
         self.use_noise_regressor = use_noise_regressor
 
-        self.noise_size = env_params.e_matrix.shape[1]
-        self.state_size = env_params.a_matrix.shape[1]
-        self.action_size = env_params.b_matrix.shape[1]
+        self.noise_size = params.matrices.e_matrix.shape[1]
+        self.state_size = params.matrices.a_matrix.shape[1]
+        self.action_size = params.matrices.b_matrix.shape[1]
 
     @property
     def aug_state_size(self) -> int:
@@ -98,10 +98,10 @@ class FeatureHandler():
             np.ndarray: Inferred noise array of shape (W,) where W denotes
                 the noise size
         """
-        return np.linalg.pinv(self.env_params.e_matrix) @ (
+        return np.linalg.pinv(self.params.matrices.e_matrix) @ (
             next_state
-            - self.env_params.a_matrix @ state
-            - self.env_params.b_matrix @ action)
+            - self.params.matrices.a_matrix @ state
+            - self.params.matrices.b_matrix @ action)
 
     def update_history(self,
                        state: np.ndarray,

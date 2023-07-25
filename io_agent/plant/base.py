@@ -140,15 +140,15 @@ class Plant(gym.Env):
                       lin_point: InputValues,
                       discretization_method: str = "exact"
                       ) -> NominalLinearEnvParams:
-        linear_system = self.affinization(self.symbolic_dynamical_system())
-        discerete_matrices = self.discretization(
-            linear_system,
+        affline_sys = self.affinization(self.symbolic_dynamical_system())
+        affine_dsc_sys = self.discretization(
+            affline_sys,
             lin_point=lin_point,
             method=discretization_method)
-        return NominalLinearEnvParams(
-            matrices=discerete_matrices,
-            constraints=self.constraints,
-            costs=self.costs
+        return self.augmentation(
+            affine_dsc_sys,
+            costs=self.costs,
+            constraints=self.constraints
         )
 
     def affinization(self, dynamical_sys: DynamicalSystem) -> AffineSystem:
@@ -308,14 +308,28 @@ class LinearizationWrapper(gym.ObservationWrapper):
         super().__init__(env)
         self.observation_space = gym.spaces.Box(
             shape=(env.state_size * 2,),
-            low=np.concatenate(env.observation_space.low,
-                               np.ones(env.observation_space.low)),
-            high=np.concatenate(env.observation_space.high,
-                                np.ones(env.observation_space.high))
+            low=np.concatenate([env.observation_space.low,
+                               np.ones_like(env.observation_space.low)]),
+            high=np.concatenate([env.observation_space.high,
+                                np.ones_like(env.observation_space.high)])
         )
 
+        self.output_disturbance = np.concatenate([
+            env.output_disturbance, np.zeros_like(env.output_disturbance)
+        ], axis=0)
+        self.reference_sequence = np.concatenate([
+            env.reference_sequence, np.ones_like(env.reference_sequence)
+        ], axis=0)
+        self.state_disturbance = env.state_disturbance
+        self.action_disturbance = env.action_disturbance
+
+        self.state_size = env.state_size * 2
+        self.action_size = env.action_size
+        self.noise_size = env.noise_size
+        self.output_size = env.output_size * 2
+
     def observation(self, obs: np.ndarray) -> np.ndarray:
-        return np.concatenate(obs, np.ones_like(obs))
+        return np.concatenate([obs, np.ones_like(obs)])
 
     def nominal_model(self,
                       lin_point: InputValues,
