@@ -85,6 +85,8 @@ class RobustMPC(MPC):
         Returns:
             Optimizer: Optimization problem, parameters, and variables
         """
+        if not np.allclose(params.matrices.d_matrix, 0, atol=1e-6):
+            raise ValueError("D matrix is not supported. It must be all zeros.")
         # raise NotImplementedError("Linearized dynamics are not implemented yet!")
         full_actions = cp.Variable((self.action_size, self.horizon))
         gamma_1 = cp.Variable(1)
@@ -92,7 +94,7 @@ class RobustMPC(MPC):
         lambda_var = cp.Variable(1)
 
         x_par = cp.Parameter(self.state_size)
-        r_par = cp.Parameter((self.state_size, self.horizon))
+        r_par = cp.Parameter((self.output_size, self.horizon))
         w_par = cp.Parameter((self.noise_size, self.horizon))
 
         full_a, full_b, full_e, full_c, full_p = self._full_matrices(params)
@@ -100,8 +102,8 @@ class RobustMPC(MPC):
         full_action_cost = np.kron(np.eye(self.horizon), params.costs.action)
         full_state_cost = np.block([
             [np.kron(np.eye(self.horizon-1), params.costs.state),
-             np.zeros((self.state_size * (self.horizon - 1), self.state_size))],
-            [np.zeros((self.state_size, self.state_size * (self.horizon - 1))),
+             np.zeros((self.output_size * (self.horizon - 1), self.output_size))],
+            [np.zeros((self.output_size, self.output_size * (self.horizon - 1))),
              params.costs.final]
         ])
 

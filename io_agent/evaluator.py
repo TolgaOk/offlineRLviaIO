@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from io_agent.plant.base import Plant
 from io_agent.control.mpc import Optimizer, MPC
 
+
 @dataclass
 class Transition:
     state: np.ndarray
@@ -32,12 +33,14 @@ class ControlLoop():
     def __init__(self,
                  state_disturbance: np.ndarray,
                  output_disturbance: np.ndarray,
+                 action_disturbance: np.ndarray,
                  plant: Plant,
                  controller: MPC,
                  rng: np.random.Generator
                  ) -> None:
         self.state_disturbance = state_disturbance
         self.output_disturbance = output_disturbance
+        self.action_disturbance = action_disturbance
         self.plant = plant
         self.controller = controller
         self.rng = rng
@@ -72,9 +75,10 @@ class ControlLoop():
             if use_foresight:
                 action, min_cost = self.controller.compute(
                     initial_state=state,
-                    reference_sequence = self.plant.reference_sequence[:, step: step + horizon],
+                    reference_sequence=self.plant.reference_sequence[:, step: step + horizon],
                     output_disturbance=self.output_disturbance[:, step: step + horizon],
                     state_disturbance=self.state_disturbance[:, step: step + horizon],
+                    action_disturbance=self.action_disturbance[:, step: step + horizon],
                 )
             else:
                 action, min_cost = self.controller.compute(

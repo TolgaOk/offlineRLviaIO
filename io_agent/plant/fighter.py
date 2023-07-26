@@ -1,6 +1,5 @@
 from typing import Any, Tuple, Dict, Optional, Union
 from warnings import warn
-from dataclasses import asdict
 import numpy as np
 import sympy
 from gymnasium import spaces
@@ -13,9 +12,8 @@ from io_agent.plant.base import (Plant,
                                  InputValues,
                                  SystemInput,
                                  DynamicalSystem,
-                                 AffineSystem,
-                                 AffineDiscreteSystem,
                                  LinearDiscreteSystem,
+                                 Disturbances,
                                  NominalLinearEnvParams)
 
 
@@ -35,27 +33,29 @@ cont_b_matrix = sympy.Matrix([
     [30, 0],
     [0, 30],
 ])
+disc_e_matrix = sympy.Matrix([
+    [0, 0],
+    [0, 0],
+    [1, 0],
+    [0, 1],
+    [0, 0],
+    [0, 0],
+])
 
 
-def make_e_matrix(cont_a_matrix: sympy.Matrix):
+def make_continous_e_matrix(cont_a_matrix: sympy.Matrix,
+                            disc_e_matrix: sympy.Matrix
+                            ) -> sympy.Matrix:
     m = np.zeros((6 + 6, 6 + 6))
     m[:6, :6] = cont_a_matrix
     m[:6, 6:] = np.eye(6)
     exp_matrix = scipy.linalg.expm(m * 0.035)
     disc_lambda = exp_matrix[:6, 6:]
 
-    disc_e_matrix = sympy.Matrix([
-        [0, 0],
-        [0, 0],
-        [1, 0],
-        [0, 1],
-        [0, 0],
-        [0, 0],
-    ])
     return np.linalg.inv(disc_lambda) @ disc_e_matrix
 
 
-cont_e_matrix = make_e_matrix(cont_a_matrix)
+cont_e_matrix = make_continous_e_matrix(cont_a_matrix, disc_e_matrix)
 cont_c_matrix = sympy.eye(6)
 cont_d_matrix = sympy.zeros(6, 2)
 
@@ -88,10 +88,6 @@ class FighterEnv(Plant):
         max_length (int): Number of simulation step of the environment.
         env_params (DiscreteLinearEnvParams): Parameters that determines the behavior of the environment.
     """
-    state_size: int = 6
-    action_size: int = 2
-    noise_size: int = 2
-    output_size: int = 6
     metadata = {"render_modes": []}
 
     def __init__(self,
@@ -99,30 +95,37 @@ class FighterEnv(Plant):
                  disturbance_bias: Optional[np.ndarray] = None,
                  rng: Optional[np.random.Generator] = None,
                  ) -> None:
-        self.observation_space = spaces.Box(-np.inf, np.inf, shape=(self.state_size,), dtype=float)
-        self.action_space = spaces.Box(-np.inf, np.inf, shape=(self.action_size,), dtype=float)
         if rng is None:
             rng = np.random.default_rng()
-            warn("Setting a random seed")
+            warn("Setting a random seed for noise!")
         self.rng = rng
-
-        self.max_length = max_length
         self.sigma_v = np.array([
             [0.01, 0],
             [0, 0.001]
         ])
-        self.dt = 0.035
+        state_dist = self._generate_state_disturbance(self.rng, max_length)
+        if disturbance_bias is not None:
+            state_dist += disturbance_bias
+        dist = Disturbances(
+            state=state_dist,
+            output=None,
+            action=None,
+        )
+        super().__init__(costs=costs,
+                         constraints=constraints,
+                         disturbances=dist,
+                         state_size=6,
+                         action_size=2,
+                         noise_size=2,
+                         output_size=6,
+                         max_length=max_length)
 
+        self.observation_space = spaces.Box(-np.inf, np.inf, shape=(self.state_size,), dtype=float)
+        self.action_space = spaces.Box(-np.inf, np.inf, shape=(self.action_size,), dtype=float)
+
+        self.dt = 0.035
         self.state = None
         self.iteration = None
-        self.state_disturbance = self._generate_state_disturbance(self.rng)
-        if disturbance_bias is not None:
-            self.state_disturbance += disturbance_bias
-        self.output_disturbance = np.zeros(
-            (self.state_size, self.max_length * 2 + 1))
-        self.action_disturbance = np.zeros((self.action_size, self.max_length * 2))
-        reference_sequence = np.zeros((self.state_size, self.max_length * 2))
-        super().__init__(costs=costs, constraints=constraints, reference_sequence=reference_sequence)
 
         # Since Fighter is a linear model we only discretize the system once
         affine_sys = self.affinization(self.symbolic_dynamical_system())
@@ -167,20 +170,16 @@ class FighterEnv(Plant):
 
     def fill_symbols(self,
                      input_values: InputValues,
-                     dynamic_system: AffineSystem
                      ) -> Dict[str, Union[float, np.ndarray]]:
         values = dict(
             **{f"x_{index+1}": value for index, value in enumerate(input_values.state.flatten())},
             **{f"u_{index+1}": value for index, value in enumerate(input_values.action.flatten())},
             **{f"w_{index+1}": value for index, value in enumerate(input_values.noise.flatten())},
-            dt=0.035,
+            dt=self.dt,
         )
-        state_dot = self._evaluate_sym(dynamic_system.dyn_constant, values=values)
-        values.update({"\dot{x}_" + f"{index+1}": value
-                       for index, value in enumerate(state_dot.flatten())})
         return values
 
-    def _generate_state_disturbance(self, rng: np.random.Generator) -> np.ndarray:
+    def _generate_state_disturbance(self, rng: np.random.Generator, max_length: int) -> np.ndarray:
         """ Generate random time varying noise
 
         Returns:
@@ -188,9 +187,9 @@ class FighterEnv(Plant):
                 where L denotes the environment length
         """
         return np.stack([
-            0.5 * np.sin(np.linspace(0, 6*np.pi, self.max_length * 2) + np.pi/2 * rng.random()),
-            0.01 * np.ones(self.max_length * 2)],
-            axis=0) + self.sigma_v @ rng.normal(size=(2, self.max_length * 2))
+            0.5 * np.sin(np.linspace(0, 6*np.pi, max_length * 2) + np.pi/2 * rng.random()),
+            0.01 * np.ones(max_length * 2)],
+            axis=0) + self.sigma_v @ rng.normal(size=(2, max_length * 2))
 
     def _measure(self) -> np.ndarray:
         """ Step output of the plant (does not use d_matrix)
@@ -199,7 +198,8 @@ class FighterEnv(Plant):
             np.ndarray: Output array of shape (S,)
                 where S denotes the state/input size
         """
-        return self._nominal_model.matrices.c_matrix @ self.state + self.output_disturbance[:, self.iteration]
+        return (self._nominal_model.matrices.c_matrix @ self.state +
+                self.disturbances.output[:, self.iteration])
 
     def reset(self,
               seed: Optional[int] = None,
@@ -248,8 +248,8 @@ class FighterEnv(Plant):
         if self.iteration >= self.max_length:
             raise RuntimeError("Environment is terminated. Call reset function first.")
 
-        noisy_action = action + self.action_disturbance[:, self.iteration]
-        state_noise = self.state_disturbance[:, self.iteration]
+        noisy_action = action + self.disturbances.action[:, self.iteration]
+        state_noise = self.disturbances.state[:, self.iteration]
         reference = self.reference_sequence[:, self.iteration]
 
         next_state = (self._nominal_model.matrices.a_matrix @ self.state

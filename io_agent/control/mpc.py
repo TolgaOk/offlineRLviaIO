@@ -42,6 +42,7 @@ class MPC():
                 reference_sequence: np.ndarray,
                 output_disturbance: Optional[np.ndarray] = None,
                 state_disturbance: Optional[np.ndarray] = None,
+                input_disturbance: Optional[np.ndarray] = None,
                 ) -> Tuple[Union[np.ndarray, float]]:
         """ Compute the optimal actions (if possible) and total cost
 
@@ -66,9 +67,9 @@ class MPC():
 
         if output_disturbance is None:
             output_disturbance = np.zeros((self.output_size, self.horizon))
-
         if state_disturbance is None:
             state_disturbance = np.zeros((self.noise_size, self.horizon))
+
         self.optimizer.parameters["initial_state"].value = initial_state
         self.optimizer.parameters["reference_sequence"].value = (
             reference_sequence - output_disturbance)
@@ -90,8 +91,11 @@ class MPC():
         constraints = []
         cost = 0
 
+        if not np.allclose(params.matrices.d_matrix, 0, atol=1e-6):
+            raise ValueError("D matrix is not supported. It must be all zeros.")
+
         init_state = cp.Parameter(self.state_size)
-        r_par = cp.Parameter((self.state_size, self.horizon))
+        r_par = cp.Parameter((self.output_size, self.horizon))
         w_par = cp.Parameter((self.noise_size, self.horizon))
 
         state = init_state
@@ -103,7 +107,7 @@ class MPC():
                      params.matrices.e_matrix @ w_par[:, step])
             state_cost = (params.costs.state if step < self.horizon - 1
                           else params.costs.final)
-            cost = cost + cp.quad_form(state, state_cost)
+            cost = cost + cp.quad_form((params.matrices.c_matrix @ state - r_par[:, step]), state_cost)
             cost = cost + cp.quad_form(action_var, params.costs.action)
 
             constraints += [params.constraints.state_constraint_matrix @ state <=

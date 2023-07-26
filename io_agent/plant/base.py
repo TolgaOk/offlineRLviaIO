@@ -23,10 +23,18 @@ class LinearConstraints:
 
 
 @dataclass
+class Disturbances:
+    state: Optional[np.ndarray] = None
+    action: Optional[np.ndarray] = None
+    output: Optional[np.ndarray] = None
+
+
+@dataclass
 class InputValues():
     state: np.ndarray
     action: np.ndarray
     noise: np.ndarray
+    output_noise: Optional[np.ndarray] = None
 
 
 @dataclass
@@ -34,6 +42,7 @@ class SystemInput():
     state: sympy.Matrix
     action: sympy.Matrix
     noise: sympy.Matrix
+    output_noise: Optional[sympy.Matrix] = None
 
 
 @dataclass
@@ -105,21 +114,40 @@ class NominalLinearEnvParams():
 
 
 class Plant(gym.Env):
-    state_size: int
-    action_size: int
-    noise_size: int
-    output_size: int
 
     def __init__(self,
+                 state_size: int,
+                 action_size: int,
+                 noise_size: int,
+                 output_size: int,
+                 max_length: int,
                  costs: QuadraticCosts,
-                 constraints: Optional[LinearConstraints] = None,
-                 reference_sequence: Optional[np.ndarray] = None
+                 constraints: LinearConstraints,
+                 reference_sequence: Optional[np.ndarray] = None,
+                 disturbances: Optional[Disturbances] = None,
                  ) -> None:
         """ Base Plant class with quadratic costs and optinal linear constraints and reference_sequence
         """
+        self.state_size = state_size
+        self.action_size = action_size
+        self.noise_size = noise_size
+        self.output_size = output_size
+        self.max_length = max_length
         self.costs = costs
         self.constraints = constraints
+
+        if reference_sequence is None:
+            reference_sequence = np.zeros((self.output_size, self.max_length * 2))
         self.reference_sequence = reference_sequence
+
+        if disturbances is None:
+            disturbances = Disturbances()
+        for key, dist in asdict(disturbances).items():
+            if dist is None:
+                setattr(disturbances, key, np.zeros((getattr(self, f"{key}_size"),
+                                                    self.max_length * 2))
+                        )
+        self.disturbances = disturbances
         super().__init__()
 
     @abstractmethod
@@ -129,7 +157,6 @@ class Plant(gym.Env):
     @abstractmethod
     def fill_symbols(self,
                      input_values: InputValues,
-                     dynamical_sys: DynamicalSystem
                      ) -> Dict[str, Union[float, np.ndarray]]:
         raise NotImplementedError
 
@@ -185,7 +212,7 @@ class Plant(gym.Env):
                        lin_point: InputValues,
                        method: str = "exact"
                        ) -> AffineDiscreteSystem:
-        values = self.fill_symbols(lin_point, affine_sys)
+        values = self.fill_symbols(lin_point)
         continouos_matrices = {key: self._evaluate_sym(getattr(affine_sys, f"{key}_matrix"), values)
                                for key in ("a", "b", "c", "e", "d")}
         constants = {f"{prefix}_constant": self._evaluate_sym(getattr(affine_sys, f"{prefix}_constant"), values).flatten()
@@ -268,24 +295,12 @@ class Plant(gym.Env):
                 ]),
                 c_matrix=np.block([
                     [affine_dsc_sys.c_matrix, affine_dsc_sys.out_constant],
-                    [np.zeros_like(affine_dsc_sys.out_constant.T), np.eye(self.state_size)]
                 ]),
                 d_matrix=np.block([
                     [affine_dsc_sys.d_matrix],
-                    [np.zeros_like(affine_dsc_sys.d_matrix)]
                 ])
             ),
-            costs=QuadraticCosts(
-                state=np.block([
-                    [costs.state, np.zeros_like(costs.state)],
-                    [np.zeros_like(costs.state), np.zeros_like(costs.state)]
-                ]),
-                action=costs.action,
-                final=np.block([
-                    [costs.final, np.zeros_like(costs.final)],
-                    [np.zeros_like(costs.final), np.zeros_like(costs.final)]
-                ]),
-            ),
+            costs=costs,
             constraints=LinearConstraints(
                 state_constraint_matrix=np.block([
                     [constraints.state_constraint_matrix, np.zeros_like(
@@ -314,19 +329,13 @@ class LinearizationWrapper(gym.ObservationWrapper):
                                 np.ones_like(env.observation_space.high)])
         )
 
-        self.output_disturbance = np.concatenate([
-            env.output_disturbance, np.zeros_like(env.output_disturbance)
-        ], axis=0)
-        self.reference_sequence = np.concatenate([
-            env.reference_sequence, np.ones_like(env.reference_sequence)
-        ], axis=0)
-        self.state_disturbance = env.state_disturbance
-        self.action_disturbance = env.action_disturbance
+        self.disturbances = env.disturbances
+        self.reference_sequence = env.reference_sequence
 
         self.state_size = env.state_size * 2
         self.action_size = env.action_size
         self.noise_size = env.noise_size
-        self.output_size = env.output_size * 2
+        self.output_size = env.output_size
 
     def observation(self, obs: np.ndarray) -> np.ndarray:
         return np.concatenate([obs, np.ones_like(obs)])
