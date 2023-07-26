@@ -42,7 +42,7 @@ class MPC():
                 reference_sequence: np.ndarray,
                 output_disturbance: Optional[np.ndarray] = None,
                 state_disturbance: Optional[np.ndarray] = None,
-                input_disturbance: Optional[np.ndarray] = None,
+                action_disturbance: Optional[np.ndarray] = None,
                 ) -> Tuple[Union[np.ndarray, float]]:
         """ Compute the optimal actions (if possible) and total cost
 
