@@ -359,7 +359,8 @@ class Plant(gym.Env):
                     matrix=np.block([
                         [constraints.state.matrix, np.zeros_like(constraints.state.matrix)]
                     ]),
-                    vector=constraints.state.vector),
+                    vector=constraints.state.vector
+                ) if constraints.state is not None else None,
                 action=constraints.action
             )
         )
