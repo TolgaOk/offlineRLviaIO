@@ -19,6 +19,7 @@ class LinearConstraint:
     matrix: np.ndarray
     vector: np.ndarray
 
+
 @dataclass
 class LinearConstraints:
     state: Optional[LinearConstraint] = None
@@ -127,7 +128,7 @@ class Plant(gym.Env):
                  costs: QuadraticCosts,
                  constraints: LinearConstraints,
                  reference_sequence: Optional[np.ndarray] = None,
-                 disturbances: Optional[Disturbances] = None,
+                 disturbance_bias: Optional[Disturbances] = None,
                  ) -> None:
         """ Base Plant class with quadratic costs and optinal linear constraints and reference_sequence
         """
@@ -138,20 +139,16 @@ class Plant(gym.Env):
         self.max_length = max_length
         self.costs = costs
         self.constraints = constraints
+        self.disturbance_bias = disturbance_bias
 
         if reference_sequence is None:
             reference_sequence = np.zeros((self.output_size, self.max_length * 2))
         self.reference_sequence = reference_sequence
-
-        if disturbances is None:
-            disturbances = Disturbances()
-        for key, dist in asdict(disturbances).items():
-            if dist is None:
-                setattr(disturbances, key, np.zeros((getattr(self, f"{key}_size"),
-                                                    self.max_length * 2))
-                        )
-        self.disturbances = disturbances
         super().__init__()
+
+    @abstractmethod
+    def generate_disturbance(self, rng: np.random.Generator) -> Disturbances:
+        raise NotImplementedError
 
     @abstractmethod
     def symbolic_dynamical_system(self) -> DynamicalSystem:
@@ -162,6 +159,59 @@ class Plant(gym.Env):
                      input_values: InputValues,
                      ) -> Dict[str, Union[float, np.ndarray]]:
         raise NotImplementedError
+
+    @abstractmethod
+    def _reset(self,
+               rng: np.random.Generator,
+               options: Optional[Dict[str, Any]] = None
+               ) -> Tuple[Union[np.ndarray, Optional[Dict[str, Disturbances]]]]:
+        raise NotImplementedError
+
+    def reset_disturbances(self,
+                           rng: np.random.Generator,
+                           ) -> Tuple[Disturbances]:
+        env_disturbance = dict()
+        biased_disturbance = dict()
+        for key, dist in asdict(self.generate_disturbance(rng)).items():
+            if dist is None:
+                env_disturbance[key] = np.zeros((getattr(self, f"{key}_size"),
+                                                 self.max_length * 2))
+            else:
+                env_disturbance[key] = dist.copy()
+            biased_disturbance[key] = env_disturbance[key].copy()
+        if (self.disturbance_bias is not None):
+            for key, dist_bias in asdict(self.disturbance_bias).items():
+                if (dist_bias is not None):
+                    env_disturbance[key] += dist_bias
+        return Disturbances(**env_disturbance), Disturbances(**biased_disturbance)
+
+    def reset(self,
+              seed: Optional[int] = None,
+              options: Optional[Dict[str, Any]] = None
+              ) -> Tuple[Union[np.ndarray, Optional[Dict[str, Disturbances]]]]:
+        """ Initialize the environment with random initial state
+
+        Args:
+            seed (Optional[int], optional): Random seed of the episode/trajectory. Defaults to random integer.
+            options (Optional[Dict[str, Any]], optional): Options for the episode (unused). Defaults to None.
+
+        Returns:
+            Tuple[Union[np.ndarray, float, bool, Optional[Dict[str, Any]]]]:
+                - initial output/state (np.ndarray): Array of shape (S,)
+                     where S denotes the state/input size
+                - info (Dict[str, Any]): Metadata of the initial state (set to None)
+        """
+        super().reset(seed=seed)
+        rng = np.random.default_rng(seed)
+        bias_aware = options.get("bias_aware", False)
+        self.disturbances, biased_disturbances = self.reset_disturbances(rng)
+        return_dist = self.disturbances if bias_aware else biased_disturbances
+
+        output, info = self._reset(rng, options)
+        if "disturbance" in info.keys():
+            raise RuntimeError("The name `disturbance` is used by base Plant in the info!")
+
+        return output, dict(**info, disturbance=return_dist)
 
     def nominal_model(self, *args, **kwargs) -> Any:
         raise NotImplementedError
@@ -307,9 +357,9 @@ class Plant(gym.Env):
             constraints=LinearConstraints(
                 state=LinearConstraint(
                     matrix=np.block([
-                [constraints.state.matrix, np.zeros_like(constraints.state.matrix)]
-                            ]),
-                vector=constraints.state.vector),
+                        [constraints.state.matrix, np.zeros_like(constraints.state.matrix)]
+                    ]),
+                    vector=constraints.state.vector),
                 action=constraints.action
             )
         )
@@ -331,7 +381,7 @@ class LinearizationWrapper(gym.ObservationWrapper):
                                 np.ones_like(env.observation_space.high)])
         )
 
-        self.disturbances = env.disturbances
+        # self.disturbances = env.disturbances
         self.reference_sequence = env.reference_sequence
 
         self.state_size = env.state_size * 2

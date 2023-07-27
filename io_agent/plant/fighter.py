@@ -67,24 +67,20 @@ costs = QuadraticCosts(
 )
 
 
-
 constraints = LinearConstraints(
     state=LinearConstraint(
         matrix=np.array(
-        [[1, 0, 0, 0, 0, 0],
-         [-1, 0, 0, 0, 0, 0]]),
+            [[1, 0, 0, 0, 0, 0],
+             [-1, 0, 0, 0, 0, 0]]),
         vector=np.ones((2)),
     ),
     action=LinearConstraint(
         matrix=np.array([
-        [1, 0],
-        [-1, 0],
-        [0, 1],
-        [0, -1],
-    ]),
-
-
-
+            [1, 0],
+            [-1, 0],
+            [0, 1],
+            [0, -1],
+        ]),
         vector=np.array([2., 2., 3., 3.])
     )
 )
@@ -102,27 +98,16 @@ class FighterEnv(Plant):
     def __init__(self,
                  max_length: int,
                  disturbance_bias: Optional[np.ndarray] = None,
-                 rng: Optional[np.random.Generator] = None,
                  ) -> None:
-        if rng is None:
-            rng = np.random.default_rng()
-            warn("Setting a random seed for noise!")
-        self.rng = rng
         self.sigma_v = np.array([
             [0.01, 0],
             [0, 0.001]
         ])
-        state_dist = self._generate_state_disturbance(self.rng, max_length)
-        if disturbance_bias is not None:
-            state_dist += disturbance_bias
-        dist = Disturbances(
-            state=state_dist,
-            output=None,
-            action=None,
-        )
         super().__init__(costs=costs,
                          constraints=constraints,
-                         disturbances=dist,
+                         disturbance_bias=Disturbances(
+                             state=disturbance_bias,
+                         ),
                          state_size=6,
                          action_size=2,
                          noise_size=2,
@@ -188,17 +173,15 @@ class FighterEnv(Plant):
         )
         return values
 
-    def _generate_state_disturbance(self, rng: np.random.Generator, max_length: int) -> np.ndarray:
-        """ Generate random time varying noise
-
-        Returns:
-            np.ndarray: Noise signal of shape (2, L) 
-                where L denotes the environment length
-        """
-        return np.stack([
-            0.5 * np.sin(np.linspace(0, 6*np.pi, max_length * 2) + np.pi/2 * rng.random()),
-            0.01 * np.ones(max_length * 2)],
-            axis=0) + self.sigma_v @ rng.normal(size=(2, max_length * 2))
+    def generate_disturbance(self, rng: np.random.Generator) -> Disturbances:
+        return Disturbances(
+            state=np.stack([
+                0.5 * np.sin(np.linspace(0, 6*np.pi, self.max_length * 2) + np.pi/2 * rng.random()),
+                0.01 * np.ones(self.max_length * 2)],
+                axis=0) + self.sigma_v @ rng.normal(size=(2, self.max_length * 2)),
+            output=None,
+            action=None,
+        )
 
     def _measure(self) -> np.ndarray:
         """ Step output of the plant (does not use d_matrix)
@@ -210,28 +193,16 @@ class FighterEnv(Plant):
         return (self._nominal_model.matrices.c_matrix @ self.state +
                 self.disturbances.output[:, self.iteration])
 
-    def reset(self,
-              seed: Optional[int] = None,
-              options: Optional[Dict[str, Any]] = None
-              ) -> Tuple[Union[np.ndarray, Optional[Dict[str, Any]]]]:
+    def _reset(self,
+               rng: np.random.Generator,
+               options: Optional[Dict[str, Any]] = None
+               ) -> Tuple[Union[np.ndarray, Optional[Dict[str, Disturbances]]]]:
         """ Initialize the environment with random initial state
-
-        Args:
-            seed (Optional[int], optional): Random seed of the episode/trajectory. Defaults to random integer.
-            options (Optional[Dict[str, Any]], optional): Options for the episode (unused). Defaults to None.
-
-        Returns:
-            Tuple[Union[np.ndarray, float, bool, Optional[Dict[str, Any]]]]:
-                - initial output/state (np.ndarray): Array of shape (S,)
-                     where S denotes the state/input size
-                - info (Dict[str, Any]): Metadata of the initial state (set to None)
         """
-        super().reset(seed=seed)
         self.iteration = 0
-        rng = np.random.default_rng(seed)
         self.state = rng.random(self.state_size) / 10
-        info = None
-        return self._measure(), info
+
+        return self._measure(), dict()
 
     def step(self,
              action: np.ndarray

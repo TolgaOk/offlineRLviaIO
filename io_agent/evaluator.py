@@ -1,9 +1,9 @@
-from typing import Optional, Any, Dict, List
+from typing import Any, Dict, List
 import numpy as np
 from dataclasses import dataclass
 
 from io_agent.plant.base import Plant
-from io_agent.control.mpc import Optimizer, MPC
+from io_agent.control.mpc import MPC
 
 
 @dataclass
@@ -31,29 +31,22 @@ class ControlLoop():
     """
 
     def __init__(self,
-                 state_disturbance: np.ndarray,
-                 output_disturbance: np.ndarray,
-                 action_disturbance: np.ndarray,
                  plant: Plant,
                  controller: MPC,
                  rng: np.random.Generator
                  ) -> None:
-        self.state_disturbance = state_disturbance
-        self.output_disturbance = output_disturbance
-        self.action_disturbance = action_disturbance
         self.plant = plant
         self.controller = controller
         self.rng = rng
 
     def simulate(self,
-                 initial_state: Optional[np.ndarray],
+                 bias_aware: bool,
                  use_foresight: bool
                  ) -> List[Transition]:
         """ Simulate a single episode/trajectory starting from the given initial
         state
 
         Args:
-            initial_state (Optional[np.ndarray]): Initial state of shape (S,)
             use_foresight (bool): If true; provide future state and output disturbances
                 to the MPC agent
 
@@ -63,9 +56,11 @@ class ControlLoop():
 
         simulation_sequence = []
 
-        if initial_state is None:
-            initial_state, _ = self.plant.reset(seed=self.rng.integers(0, 2**30).item())
+        initial_state, info = self.plant.reset(
+            seed=self.rng.integers(0, 2**30).item(),
+            options=dict(bias_aware=bias_aware))
         horizon = self.controller.horizon if self.controller.horizon is not None else 0
+        disturbance = info["disturbance"]
 
         self.controller.reset()
         state = initial_state
@@ -73,15 +68,15 @@ class ControlLoop():
         step = 0
         while not done:
             if use_foresight:
-                action, min_cost = self.controller.compute(
+                action, _ = self.controller.compute(
                     initial_state=state,
                     reference_sequence=self.plant.reference_sequence[:, step: step + horizon],
-                    output_disturbance=self.output_disturbance[:, step: step + horizon],
-                    state_disturbance=self.state_disturbance[:, step: step + horizon],
-                    action_disturbance=self.action_disturbance[:, step: step + horizon],
+                    output_disturbance=disturbance.output[:, step: step + horizon],
+                    state_disturbance=disturbance.state[:, step: step + horizon],
+                    action_disturbance=disturbance.action[:, step: step + horizon],
                 )
             else:
-                action, min_cost = self.controller.compute(
+                action, _ = self.controller.compute(
                     state,
                     self.plant.reference_sequence[:, step: step + horizon],
                 )
