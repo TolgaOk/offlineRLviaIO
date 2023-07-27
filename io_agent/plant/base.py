@@ -15,11 +15,14 @@ class QuadraticCosts():
 
 
 @dataclass
+class LinearConstraint:
+    matrix: np.ndarray
+    vector: np.ndarray
+
+@dataclass
 class LinearConstraints:
-    state_constraint_matrix: np.ndarray
-    state_constraint_vector: np.ndarray
-    action_constraint_matrix: np.ndarray
-    action_constraint_vector: np.ndarray
+    state: Optional[LinearConstraint] = None
+    action: Optional[LinearConstraint] = None
 
 
 @dataclass
@@ -302,13 +305,12 @@ class Plant(gym.Env):
             ),
             costs=costs,
             constraints=LinearConstraints(
-                state_constraint_matrix=np.block([
-                    [constraints.state_constraint_matrix, np.zeros_like(
-                        constraints.state_constraint_matrix)]
-                ]),
-                state_constraint_vector=constraints.state_constraint_vector,
-                action_constraint_matrix=constraints.action_constraint_matrix,
-                action_constraint_vector=constraints.action_constraint_vector,
+                state=LinearConstraint(
+                    matrix=np.block([
+                [constraints.state.matrix, np.zeros_like(constraints.state.matrix)]
+                            ]),
+                vector=constraints.state.vector),
+                action=constraints.action
             )
         )
 

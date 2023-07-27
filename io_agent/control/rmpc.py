@@ -150,19 +150,19 @@ class RobustMPC(MPC):
         objective = gamma_1 + gamma_2
 
         constraints = [constraint_lambda, lmi_constraint_1, lmi_constraint_2]
-        if self.input_constraints_flag:
+        if (self.input_constraints_flag) and (params.constraints.action is not None):
             full_action_constraint_matrix = np.kron(
-                np.eye(self.horizon), params.constraints.action_constraint_matrix)
+                np.eye(self.horizon), params.constraints.action.matrix)
             full_action_constraint_vector = np.kron(
-                np.ones((self.horizon)), params.constraints.action_constraint_vector)
+                np.ones((self.horizon)), params.constraints.action.vector)
             constraints.append(full_action_constraint_matrix @
                                full_actions.flatten() <= full_action_constraint_vector)
 
-        if self.state_constraints_flag:
+        if (self.state_constraints_flag) and (params.constraints.state is not None):
             full_state_constraint_matrix = np.kron(
-                np.eye(self.horizon), params.constraints.state_constraint_matrix)
+                np.eye(self.horizon), params.constraints.state.matrix)
             full_state_constraint_vector = np.kron(
-                np.ones((self.horizon,)), params.constraints.state_constraint_vector)
+                np.ones((self.horizon,)), params.constraints.state.vector)
 
             # Robustify state constraints
             size = full_state_constraint_matrix.shape[0]

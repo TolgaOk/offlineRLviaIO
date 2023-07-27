@@ -64,7 +64,6 @@ class MPC():
                     cannot solve the problem.
                 - Total cost of the MPC problem (float)
         """
-
         if output_disturbance is None:
             output_disturbance = np.zeros((self.output_size, self.horizon))
         if state_disturbance is None:
@@ -110,10 +109,12 @@ class MPC():
             cost = cost + cp.quad_form((params.matrices.c_matrix @ state - r_par[:, step]), state_cost)
             cost = cost + cp.quad_form(action_var, params.costs.action)
 
-            constraints += [params.constraints.state_constraint_matrix @ state <=
-                            params.constraints.state_constraint_vector]
-            constraints += [params.constraints.action_constraint_matrix @ action_var <=
-                            params.constraints.action_constraint_vector]
+            if params.constraints.state is not None:
+                constraints += [params.constraints.state.matrix @ state <=
+                                params.constraints.state.vector]
+            if params.constraints.action is not None:
+                constraints += [params.constraints.action.matrix @ action_var <=
+                                params.constraints.action.vector]
         objective = cp.Minimize(cost)
         problem = cp.Problem(objective, constraints)
 

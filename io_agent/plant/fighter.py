@@ -8,6 +8,7 @@ import scipy
 
 from io_agent.plant.base import (Plant,
                                  QuadraticCosts,
+                                 LinearConstraint,
                                  LinearConstraints,
                                  InputValues,
                                  SystemInput,
@@ -65,19 +66,27 @@ costs = QuadraticCosts(
     final=np.diag([1, 1000,  100, 1000, 1, 1]),
 )
 
+
+
 constraints = LinearConstraints(
-    state_constraint_matrix=np.array(
+    state=LinearConstraint(
+        matrix=np.array(
         [[1, 0, 0, 0, 0, 0],
-         [-1, 0, 0, 0, 0, 0]]
+         [-1, 0, 0, 0, 0, 0]]),
+        vector=np.ones((2)),
     ),
-    state_constraint_vector=np.ones((2)),
-    action_constraint_matrix=np.array([
+    action=LinearConstraint(
+        matrix=np.array([
         [1, 0],
         [-1, 0],
         [0, 1],
         [0, -1],
     ]),
-    action_constraint_vector=np.array([2., 2., 3., 3.])
+
+
+
+        vector=np.array([2., 2., 3., 3.])
+    )
 )
 
 

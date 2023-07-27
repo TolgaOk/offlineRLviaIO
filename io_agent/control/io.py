@@ -34,7 +34,7 @@ class IOController():
                  softening_penalty: float = 1e9,
                  ) -> None:
         self.feature_handler = feature_handler
-        self.include_constraints = include_constraints
+        self.include_constraints = include_constraints and (params.constraints.state or params.constraints.action)
         self.action_constraints_flag = action_constraints_flag
         self.state_constraints_flag = state_constraints_flag
         self.soften_state_constraints = soften_state_constraints
@@ -43,9 +43,11 @@ class IOController():
         self.params = params
         self.horizon = None  # For compatibility with the ControlLoop class
 
+        action_const_size = (0 if params.constraints.action is None else params.constraints.action.vector.shape[0])
+        state_const_size = (0 if params.constraints.state is None else params.constraints.state.vector.shape[0])
         self.polytope_size = (
-            params.constraints.action_constraint_vector.shape[0] * int(action_constraints_flag)
-            + params.constraints.state_constraint_vector.shape[0] * int(state_constraints_flag)
+            action_const_size * int(action_constraints_flag)
+            + state_const_size * int(state_constraints_flag)
         )
         self.action_size = self.feature_handler.action_size
         self.state_size = self.feature_handler.state_size
@@ -128,11 +130,11 @@ class IOController():
             + 2 * cp.sum(cp.multiply(state, self._q_theta_su @ action))
         )
 
-        if self.state_constraints_flag and self.soften_state_constraints:
-            slack_state = cp.Variable(self.params.constraints.state_constraint_vector.shape[0])
+        if (self.state_constraints_flag and self.params.constraints.state) and self.soften_state_constraints:
+            slack_state = cp.Variable(self.params.constraints.state.vector.shape[0])
             objective += + self.softening_penalty * cp.norm(slack_state, 2)**2
             slack_action = cp.Variable(
-                self.polytope_size - self.params.constraints.state_constraint_vector.shape[0])
+                self.polytope_size - self.params.constraints.state.vector.shape[0])
             slack = cp.hstack([slack_action, slack_state])
 
         constraints = []
@@ -170,17 +172,17 @@ class IOController():
         """
         constraint_matrices = []
         constraint_vectors = []
-        if self.state_constraints_flag:
+        if (self.state_constraints_flag) and (self.params.constraints.state is not None):
             constraint_matrices.append(
-                self.params.constraints.state_constraint_matrix @ self.params.matrices.b_matrix
+                self.params.constraints.state.matrix @ self.params.matrices.b_matrix
             )
             constraint_vectors.append(
-                self.params.constraints.state_constraint_vector
-                - self.params.constraints.state_constraint_matrix @ self.params.matrices.a_matrix @ state
+                self.params.constraints.state.vector
+                - self.params.constraints.state.matrix @ self.params.matrices.a_matrix @ state
             )
-        if self.action_constraints_flag:
-            constraint_matrices.append(self.params.constraints.action_constraint_matrix)
-            constraint_vectors.append(self.params.constraints.action_constraint_vector)
+        if (self.action_constraints_flag) and (self.params.constraints.action is not None):
+            constraint_matrices.append(self.params.constraints.action.matrix)
+            constraint_vectors.append(self.params.constraints.action.vector)
         constraint_matrix = np.concatenate(constraint_matrices, axis=0)
         constraint_vector = np.concatenate(constraint_vectors, axis=0)
         return (constraint_matrix, constraint_vector)
