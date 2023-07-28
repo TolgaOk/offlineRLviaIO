@@ -34,7 +34,8 @@ class IOController():
                  softening_penalty: float = 1e9,
                  ) -> None:
         self.feature_handler = feature_handler
-        self.include_constraints = include_constraints and (params.constraints.state or params.constraints.action)
+        self.include_constraints = include_constraints and (
+            params.constraints.state or params.constraints.action)
         self.action_constraints_flag = action_constraints_flag
         self.state_constraints_flag = state_constraints_flag
         self.soften_state_constraints = soften_state_constraints
@@ -43,8 +44,10 @@ class IOController():
         self.params = params
         self.horizon = None  # For compatibility with the ControlLoop class
 
-        action_const_size = (0 if params.constraints.action is None else params.constraints.action.vector.shape[0])
-        state_const_size = (0 if params.constraints.state is None else params.constraints.state.vector.shape[0])
+        action_const_size = (
+            0 if params.constraints.action is None else params.constraints.action.vector.shape[0])
+        state_const_size = (
+            0 if params.constraints.state is None else params.constraints.state.vector.shape[0])
         self.polytope_size = (
             action_const_size * int(action_constraints_flag)
             + state_const_size * int(state_constraints_flag)

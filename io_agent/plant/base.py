@@ -257,7 +257,7 @@ class Plant(gym.Env):
                 jac_out_d @ action),
         )
 
-    def _evaluate_sym(self, sym: sympy.Matrix, values: Dict[str, Union[np.ndarray, float]]) -> Union[np.ndarray, float]:
+    def evaluate_sym(self, sym: sympy.Matrix, values: Dict[str, Union[np.ndarray, float]]) -> Union[np.ndarray, float]:
         return np.array(sym.evalf(subs=values), dtype=np.float64)
 
     def discretization(self,
@@ -266,9 +266,9 @@ class Plant(gym.Env):
                        method: str = "exact"
                        ) -> AffineDiscreteSystem:
         values = self.fill_symbols(lin_point)
-        continouos_matrices = {key: self._evaluate_sym(getattr(affine_sys, f"{key}_matrix"), values)
+        continuous_matrices = {key: self.evaluate_sym(getattr(affine_sys, f"{key}_matrix"), values)
                                for key in ("a", "b", "c", "e", "d")}
-        constants = {f"{prefix}_constant": self._evaluate_sym(getattr(affine_sys, f"{prefix}_constant"), values).flatten()
+        constants = {f"{prefix}_constant": self.evaluate_sym(getattr(affine_sys, f"{prefix}_constant"), values).flatten()
                      for prefix in ("dyn", "out")}
 
         if method == "exact":
@@ -278,23 +278,24 @@ class Plant(gym.Env):
             method_fn = self._euler_discretization
         else:
             raise ValueError(f"Unknown discretization method: {method}")
-        return method_fn(continouos_matrices, constants, dt=values["dt"])
+        return method_fn(continuous_matrices, constants, dt=values["dt"])
 
     def _exact_discretization(self,
-                              continouos_matrices: Dict[str, np.ndarray],
+                              continuous_matrices: Dict[str, np.ndarray],
                               constants: Dict[str, np.ndarray],
                               dt: float,
                               ) -> AffineDiscreteSystem:
-        n_state = continouos_matrices["a"].shape[0]
-        n_action = continouos_matrices["b"].shape[1]
-        n_noise = continouos_matrices["e"].shape[1]
+        n_state = continuous_matrices["a"].shape[0]
+        n_action = continuous_matrices["b"].shape[1]
+        n_noise = continuous_matrices["e"].shape[1]
+        n_out = continuous_matrices["c"].shape[0]
 
         n_size = n_state * 2 + n_action + n_noise
         matrix = np.zeros((n_size, n_size))
-        matrix[:n_state, :n_state] = continouos_matrices["a"]
+        matrix[:n_state, :n_state] = continuous_matrices["a"]
         matrix[:n_state, n_state: 2 * n_state] = np.eye(n_state)
-        matrix[:n_state, 2 * n_state:-n_noise] = continouos_matrices["b"]
-        matrix[:n_state, 2 * n_state + n_action:] = continouos_matrices["e"]
+        matrix[:n_state, 2 * n_state:-n_noise] = continuous_matrices["b"]
+        matrix[:n_state, 2 * n_state + n_action:] = continuous_matrices["e"]
 
         exp_matrix = scipy.linalg.expm(matrix * dt)
         discerete_a_matrix = exp_matrix[:n_state, :n_state]
@@ -302,28 +303,31 @@ class Plant(gym.Env):
         exp_a = exp_matrix[:n_state, n_state: 2 * n_state]
         discerete_e_matrix = exp_matrix[:n_state, 2 * n_state + n_action:]
 
+        out_constant = np.zeros_like(continuous_matrices["c"])
+        out_constant[:n_out, :n_out] = np.diag(constants["out_constant"])
+
         return AffineDiscreteSystem(
             a_matrix=discerete_a_matrix,
             b_matrix=discerete_b_matrix,
             e_matrix=discerete_e_matrix,
-            c_matrix=continouos_matrices["c"],
-            d_matrix=continouos_matrices["d"],
+            c_matrix=continuous_matrices["c"],
+            d_matrix=continuous_matrices["d"],
             dyn_constant=(exp_a @ np.diag(constants["dyn_constant"])),
-            out_constant=(np.diag(constants["out_constant"]))
+            out_constant=out_constant
         )
 
     def _euler_discretization(self,
-                              continouos_matrices: Dict[str, np.ndarray],
+                              continuous_matrices: Dict[str, np.ndarray],
                               dt: float,
                               *args,
                               ) -> AffineDiscreteSystem:
         raise NotImplementedError
         return dict(
-            a_matrix=np.eye(continouos_matrices["a"].shape[0]) + continouos_matrices["a"] * dt,
-            b_matrix=continouos_matrices["b"] * dt,
-            e_matrix=continouos_matrices["e"] * dt,
-            c_matrix=continouos_matrices["c"],
-            d_matrix=continouos_matrices["d"],
+            a_matrix=np.eye(continuous_matrices["a"].shape[0]) + continuous_matrices["a"] * dt,
+            b_matrix=continuous_matrices["b"] * dt,
+            e_matrix=continuous_matrices["e"] * dt,
+            c_matrix=continuous_matrices["c"],
+            d_matrix=continuous_matrices["d"],
         )
 
     def augmentation(self,

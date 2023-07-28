@@ -201,8 +201,9 @@ class FighterEnv(Plant):
         """
         self.iteration = 0
         self.state = rng.random(self.state_size) / 10
+        options["state"]
 
-        return self._measure(), dict()
+        return self.state, dict()
 
     def step(self,
              action: np.ndarray
@@ -245,4 +246,4 @@ class FighterEnv(Plant):
         truncation = self.iteration == self.max_length
         terminal = False
         info = None
-        return measurement, cost, truncation, terminal, info
+        return self.state, cost, truncation, terminal, info
