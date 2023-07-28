@@ -1,11 +1,10 @@
 from typing import Any, Tuple, Dict, Optional, Union
-from warnings import warn
 from dataclasses import dataclass
+from functools import partial
 import numpy as np
 import sympy
+from scipy.integrate import odeint
 from gymnasium import spaces
-import scipy
-from pprint import pprint
 
 
 from io_agent.plant.base import (Plant,
@@ -15,9 +14,6 @@ from io_agent.plant.base import (Plant,
                                  SystemInput,
                                  DynamicalSystem,
                                  Disturbances,
-                                 AffineSystem,
-                                 AffineDiscreteSystem,
-                                 LinearDiscreteSystem,
                                  NominalLinearEnvParams)
 
 
@@ -48,21 +44,22 @@ class Constants:
 class DualHeaterEnv(Plant):
 
     def __init__(self,
-                 env_length: int,
+                 max_length: int,
                  disturbance_bias: Optional[np.ndarray] = None,
                  ) -> None:
         self.dt = 10
         self.ambient_temp = 23
         self.iteration = None
         self.reference_temp = np.array([55.0, 45.0])
+        self.dyn_sys = self.symbolic_dynamical_system()
 
         self.observation_space = spaces.Box(
             low=np.ones((4,)) * (-np.inf),
             high=np.ones((4,)) * (np.inf)
         )
         self.action_space = spaces.Box(
-            low=np.ones((2,)) * (-np.inf),
-            high=np.ones((2,)) * (np.inf)
+            low=np.ones((2,)) * 0.0,
+            high=np.ones((2,)) * 100.0
         )
 
         super().__init__(
@@ -70,10 +67,10 @@ class DualHeaterEnv(Plant):
             action_size=self.action_space.shape[0],
             noise_size=1,
             output_size=2,
-            max_length=env_length,
+            max_length=max_length,
             costs=costs,
             constraints=constraints,
-            reference_sequence=None,
+            reference_sequence=np.ones((1, max_length * 2)) * self.reference_temp.reshape(-1, 1),
             disturbance_bias=disturbance_bias,
         )
 
@@ -125,7 +122,6 @@ class DualHeaterEnv(Plant):
             f"w_x": input_values.noise[0],
             "dt": self.dt,
         }
-        # Use these as symbols
         values.update(
             {"a_1": Constants.U * Constants.A,
              "a_2": Constants.epsilon * Constants.sigma * Constants.A,
@@ -136,7 +132,7 @@ class DualHeaterEnv(Plant):
              "b_1": Constants.alpha_1,
              "b_2": Constants.alpha_2,
              "T": Constants.c2k
-        })
+             })
         return values
 
     def generate_disturbance(self, rng: np.random.Generator) -> Disturbances:
@@ -150,39 +146,82 @@ class DualHeaterEnv(Plant):
                options: Optional[Dict[str, Any]] = None
                ) -> Tuple[Union[np.ndarray, Optional[Dict[str, Any]]]]:
         self.iteration = 0
-        mean_init_state = ((self.ambient_temp - 5) - self.reference_temp)
-        self.state = mean_init_state + rng.uniform(-5., 5., size=(1,)) + rng.normal(size=(2,))
-        return self._measure(), {}
+        mean_init_state = ((self.ambient_temp - 5)
+                        #    - np.concatenate([self.reference_temp, self.reference_temp]
+                           ) + Constants.c2k
+        self.state = mean_init_state + \
+            rng.uniform(-5., 5., size=(1,)) + rng.normal(size=(self.state_size,))
+        return self.state, {}
+
+    def default_lin_point(self) -> InputValues:
+        u_1 = sympy.solve(self.dyn_sys.dyn_eq[0], self.dyn_sys.sys_input.action[0])[0]
+        u_2 = sympy.solve(self.dyn_sys.dyn_eq[1], self.dyn_sys.sys_input.action[1])[0]
+        action = sympy.Matrix([u_1, u_2])
+
+        init_lin_point = InputValues(
+            state=np.concatenate([self.reference_temp,
+                                  self.reference_temp]
+                                 ) + Constants.c2k,
+            action=np.zeros((self.action_size,)),
+            noise=np.ones(self.noise_size,) * self.ambient_temp,
+            output_noise=np.zeros((self.output_size,))
+        )
+        lin_action = self.evaluate_sym(
+            action, values=self.fill_symbols(init_lin_point)
+        ).flatten()
+        return InputValues(
+            state=init_lin_point.state,
+            action=lin_action,
+            noise=init_lin_point.noise,
+            output_noise=init_lin_point.output_noise,
+        )
 
     def linearization(self,
                       lin_point: Optional[InputValues] = None,
                       discretization_method: str = "exact"
                       ) -> NominalLinearEnvParams:
         if lin_point is None:
-            dyn_sys = self.symbolic_dynamical_system()
-            u_1 = sympy.solve(dyn_sys.dyn_eq[0], dyn_sys.sys_input.action[0])[0]
-            u_2 = sympy.solve(dyn_sys.dyn_eq[1], dyn_sys.sys_input.action[1])[0]
-            action = sympy.Matrix([u_1, u_2])
-
-            init_lin_point = InputValues(
-                state=np.concatenate([self.reference_temp,
-                                      self.reference_temp]
-                                     ) + Constants.c2k,
-                action=np.zeros((self.action_size,)),
-                noise=np.ones(self.noise_size,) * self.ambient_temp,
-                output_noise=np.zeros((self.output_size,))
-            )
-            lin_action = self._evaluate_sym(action, values=self.fill_symbols(init_lin_point))
-            lin_point = InputValues(
-                state=init_lin_point.state,
-                action=lin_action,
-                noise=init_lin_point.noise,
-                output_noise=init_lin_point.output_noise,
-            )
+            lin_point = self.default_lin_point()
         return super().linearization(lin_point, discretization_method)
 
     def _measure(self) -> np.ndarray:
-        pass
+        return self.state[2:] - Constants.c2k + self.disturbances.output[:, self.iteration]
 
-    def step():
-        pass
+    def _state_dot(self,
+                   state: np.ndarray,
+                   time: float,
+                   action: np.ndarray,
+                   dyn_eq: sympy.Matrix,
+                   step: int):
+        return self.evaluate_sym(dyn_eq, values=self.fill_symbols(InputValues(
+            state=state,
+            action=action,
+            noise=self.disturbances.state[:, step],
+            output_noise=np.zeros((self.output_size,))
+        ))).flatten()
+
+    def step(self,
+             action: np.ndarray
+             ) -> Tuple[Union[np.ndarray, float, bool, Optional[Dict[str, Any]]]]:
+
+        noisy_action = action + self.disturbances.action[:, self.iteration]
+        solution = odeint(func=partial(
+            self._state_dot,
+            action=noisy_action,
+            dyn_eq=self.dyn_sys.dyn_eq,
+            step=self.iteration),
+            t=[0, self.dt],
+            y0=self.state)
+        self.state = solution[-1]
+        self.iteration += 1
+        truncation = self.iteration == self.max_length
+        terminal = truncation
+
+        output = self._measure()
+        difference = (output - self.reference_temp)
+
+        state_cost = self.costs.state if not terminal else self.costs.final
+        cost = (difference.T.dot(state_cost).dot(difference)
+                + noisy_action.T.dot(self.costs.action).dot(noisy_action))
+        info = dict()
+        return self.state, cost, truncation, terminal, info
