@@ -5,7 +5,9 @@ import os
 import pickle
 from multiprocessing import Process, Queue
 from tqdm.notebook import tqdm
+import traceback
 import queue
+from warnings import warn
 import cvxpy as cp
 
 from io_agent.evaluator import Transition
@@ -14,7 +16,7 @@ from io_agent.evaluator import Transition
 def steady_state_cost(trajectories: List[List[Transition]], ratio: float) -> List[float]:
     return [transition.cost for transition in chain(
         *[trajectory[int(len(trajectory) * (1 - ratio)):] for trajectory in trajectories]
-        )]
+    )]
 
 
 def parallelize(n_proc: int,
@@ -27,10 +29,14 @@ def parallelize(n_proc: int,
         while True:
             try:
                 kwargs, key = work_queue.get(block=False)
+                result = fn(**kwargs)
+                result_queue.put({"key": key, "result": result})
             except queue.Empty:
-                return None
-            result = fn(**kwargs)
-            result_queue.put({"key": key, "result": result})
+                if work_queue.qsize() == 0:
+                    return None
+            except Exception as err:
+                result_queue.put({"key": key, "result": None})
+                traceback.print_exc()
 
     result_queue = Queue()
     work_queue = Queue()
