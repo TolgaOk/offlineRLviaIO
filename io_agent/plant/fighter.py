@@ -201,7 +201,6 @@ class FighterEnv(Plant):
         """
         self.iteration = 0
         self.state = rng.random(self.state_size) / 10
-        options["state"]
 
         return self.state, dict()
 
