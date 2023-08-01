@@ -142,8 +142,12 @@ class FighterEnv(Plant):
             costs=self.costs
         )
 
-    def nominal_model(self, lin_point: Optional[InputValues] = None):
-        return self._nominal_model
+    def default_lin_point(self) -> InputValues:
+        return InputValues(
+            state=np.zeros((6,)),
+            action=np.zeros((2,)),
+            noise=np.zeros((2,)),
+        )
 
     def symbolic_dynamical_system(self) -> DynamicalSystem:
         state = sympy.Matrix(sympy.symbols(" ".join([f"x_{index+1}" for index in range(6)])))

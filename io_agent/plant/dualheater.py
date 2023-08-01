@@ -176,14 +176,6 @@ class DualHeaterEnv(Plant):
             output_noise=init_lin_point.output_noise,
         )
 
-    def linearization(self,
-                      lin_point: Optional[InputValues] = None,
-                      discretization_method: str = "exact"
-                      ) -> NominalLinearEnvParams:
-        if lin_point is None:
-            lin_point = self.default_lin_point()
-        return super().linearization(lin_point, discretization_method)
-
     def _measure(self) -> np.ndarray:
         return self.state[2:] - Constants.c2k + self.disturbances.output[:, self.iteration]
 

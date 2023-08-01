@@ -166,6 +166,10 @@ class Plant(gym.Env):
                options: Optional[Dict[str, Any]] = None
                ) -> Tuple[Union[np.ndarray, Optional[Dict[str, Disturbances]]]]:
         raise NotImplementedError
+    
+    @abstractmethod
+    def default_lin_point(self) -> Optional[InputValues]:
+        raise NotImplemented
 
     def reset_disturbances(self,
                            rng: np.random.Generator,
@@ -275,7 +279,6 @@ class Plant(gym.Env):
             method_fn = self._exact_discretization
         elif method == "euler":
             raise NotImplementedError
-            method_fn = self._euler_discretization
         else:
             raise ValueError(f"Unknown discretization method: {method}")
         return method_fn(continuous_matrices, constants, dt=values["dt"])
@@ -401,6 +404,8 @@ class LinearizationWrapper(gym.ObservationWrapper):
                       lin_point: InputValues,
                       discretization_method: str = "exact"
                       ) -> NominalLinearEnvParams:
+        if lin_point is None:
+            lin_point = self.env.default_lin_point()
         return self.env.linearization(
             lin_point=lin_point,
             discretization_method=discretization_method)
