@@ -2,6 +2,7 @@ import unittest
 import numpy as np
 
 from io_agent.plant.fighter import FighterEnv
+from io_agent.plant.base import LinearizationWrapper
 from io_agent.evaluator import ControlLoop
 from io_agent.control.mpc import MPC
 from io_agent.control.io import IOController, AugmentDataset
@@ -15,37 +16,36 @@ class TestFeatureHandler(unittest.TestCase):
         self.horizon = 5
         self.n_past = 3
         self.env_length = 51
-        disturbance_bias = False
 
-        plant = FighterEnv(max_length=self.env_length,
-                           disturbance_bias=disturbance_bias,
-                           rng=np.random.default_rng(self.seed_rng.integers(0, 2**30)))
+        plant = FighterEnv(max_length=self.env_length, disturbance_bias=None)
+        plant.reference_sequence = np.ones((plant.output_size, plant.max_length * 2)) * 0.01
+        plant = LinearizationWrapper(plant)
+        env_params = plant.nominal_model(
+            lin_point=None
+        )
         self.expert_agent = MPC(
             action_size=plant.action_size,
             state_size=plant.state_size,
             noise_size=plant.noise_size,
             output_size=plant.output_size,
             horizon=self.horizon)
-        self.expert_agent.optimizer = self.expert_agent.prepare_optimizer(plant.env_params)
+        self.expert_agent.optimizer = self.expert_agent.prepare_optimizer(env_params)
 
-        state_disturbance = plant.state_disturbance.copy()
         self.control_loop = ControlLoop(
-            state_disturbance=state_disturbance,
-            output_disturbance=plant.output_disturbance,
             plant=plant,
             controller=self.expert_agent,
             rng=np.random.default_rng(self.seed_rng.integers(0, 2**30))
         )
 
         feature_handler = FeatureHandler(
-            env_params=plant.env_params,
+            params=env_params,
             n_past=self.n_past,
             add_bias=True,
             use_action_regressor=False,
             use_noise_regressor=True,
-            use_state_regressor=False)
+            use_state_regressor=False,)
         self.io_agent = IOController(
-            env_params=plant.env_params,
+            params=env_params,
             include_constraints=True,
             soften_state_constraints=True,
             state_constraints_flag=True,
@@ -60,17 +60,18 @@ class TestFeatureHandler(unittest.TestCase):
     def test_expert_actions(self) -> None:
 
         trajectories = [self.control_loop.simulate(
-            initial_state=None,
             use_foresight=True,
+            bias_aware=True,
         )]
         augmented_trajectories = self.augmenter(trajectories)
 
         for aug_tran, tran in zip(augmented_trajectories, trajectories[0][self.n_past:]):
             self.assertTrue(np.allclose(aug_tran.expert_action, tran.action, atol=1e-7))
 
+
     def test_compute_and_train_discrepancy(self) -> None:
         trajectories = [self.control_loop.simulate(
-            initial_state=None,
+            bias_aware=True,
             use_foresight=True,
         )]
         self.io_agent.reset()
