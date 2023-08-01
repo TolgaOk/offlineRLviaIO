@@ -69,11 +69,7 @@ def run_mpc(plant: Plant,
         horizon=horizon)
     agent.optimizer = agent.prepare_optimizer(
         plant.nominal_model(
-            lin_point=InputValues(
-                state=np.zeros((6,)),
-                action=np.zeros((2,)),
-                noise=np.zeros((2,)),
-            )
+            lin_point=None
         ))
     return run_agent(
         agent=agent,
@@ -115,11 +111,7 @@ def run_rmpc(plant: Plant,
                       input_constraints_flag=True)
     agent.optimizer = agent.prepare_optimizer(
         plant.nominal_model(
-            lin_point=InputValues(
-                state=np.zeros((6,)),
-                action=np.zeros((2,)),
-                noise=np.zeros((2,)),
-            )
+            lin_point=None
         ))
     return run_agent(
         agent=agent,
@@ -141,11 +133,7 @@ def prepare_io(dataset: List[Transition],
                    List[AugmentedTransition]]]:
     plant = LinearizationWrapper(plant)
     nominal_model = plant.nominal_model(
-        lin_point=InputValues(
-            state=np.zeros((6,)),
-            action=np.zeros((2,)),
-            noise=np.zeros((2,)),
-        )
+        lin_point=None
     )
     feature_handler = FeatureHandler(
         params=nominal_model,
@@ -169,11 +157,11 @@ def prepare_io(dataset: List[Transition],
     return plant, feature_handler, augmented_dataset
 
 
-@try_solve(patience=2)
+# @try_solve(patience=2)
 def run_io(feature_handler: FeatureHandler,
            plant: Plant,
            augmented_dataset: List[AugmentedTransition],
-           dataset_split_rng: np.random.Generator,
+           dataset_permute_rng: np.random.Generator,
            dataset_length: int = 300,
            bias_aware: bool = False,
            ) -> Callable[[Any], Any]:
@@ -188,7 +176,7 @@ def run_io(feature_handler: FeatureHandler,
         feature_handler=feature_handler)
     io_agent.train(
         augmented_dataset,
-        rng=dataset_split_rng)
+        rng=dataset_permute_rng)
     io_agent.action_optimizer = io_agent.prepare_action_optimizer()
     return partial(run_agent,
                    agent=io_agent,
@@ -200,7 +188,7 @@ def run_io(feature_handler: FeatureHandler,
 
 def run_io_mpc(dataset: List[Transition],
                plant: Plant,
-               dataset_split_rng: np.random.Generator,
+               dataset_permute_rng: np.random.Generator,
                n_past: int = 1,
                dataset_length: int = 300,
                bias_aware: bool = True,
@@ -234,7 +222,7 @@ def run_io_mpc(dataset: List[Transition],
         plant=linearized_plant,
         feature_handler=feature_handler,
         augmented_dataset=augmented_dataset,
-        dataset_split_rng=dataset_split_rng,
+        dataset_permute_rng=dataset_permute_rng,
         dataset_length=dataset_length,
         bias_aware=bias_aware,
     )
@@ -242,7 +230,7 @@ def run_io_mpc(dataset: List[Transition],
 
 def run_io_rmpc(dataset: List[Transition],
                 plant: Plant,
-                dataset_split_rng: np.random.Generator,
+                dataset_permute_rng: np.random.Generator,
                 expert_rho: float,
                 n_past: int = 1,
                 dataset_length: int = 300,
@@ -281,7 +269,9 @@ def run_io_rmpc(dataset: List[Transition],
         plant=linearized_plant,
         feature_handler=feature_handler,
         augmented_dataset=augmented_dataset,
-        dataset_split_rng=dataset_split_rng,
+        dataset_permute_rng=dataset_permute_rng,
         dataset_length=dataset_length,
         bias_aware=bias_aware,
     )
+
+
