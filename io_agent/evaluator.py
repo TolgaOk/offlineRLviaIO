@@ -1,4 +1,4 @@
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 import numpy as np
 from dataclasses import dataclass
 
@@ -15,6 +15,7 @@ class Transition:
     termination: bool
     truncation: bool
     info: Dict[str, Any]
+    reference: Optional[np.ndarray]
 
 
 class ControlLoop():
@@ -92,7 +93,8 @@ class ControlLoop():
                 cost=cost,
                 termination=termination,
                 truncation=truncation,
-                info=info
+                info=info,
+                reference=self.plant.reference_sequence[:, step]
             )
             simulation_sequence.append(transition)
             state = next_state

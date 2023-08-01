@@ -273,5 +273,3 @@ def run_io_rmpc(dataset: List[Transition],
         dataset_length=dataset_length,
         bias_aware=bias_aware,
     )
-
-

@@ -316,7 +316,11 @@ class AugmentDataset():
         self.expert_agent = expert_agent
         self.feature_handler = feature_handler
 
-    def _get_expert_action(self, state: np.ndarray, noise_sequence: np.ndarray) -> np.ndarray:
+    def _get_expert_action(self,
+                           state: np.ndarray,
+                           noise_sequence: np.ndarray,
+                           reference_sequence: np.ndarray
+                           ) -> np.ndarray:
         """ Compute the expert action using the expert agent
 
         Args:
@@ -331,7 +335,7 @@ class AugmentDataset():
         """
         action, _ = self.expert_agent.compute(
             initial_state=state,
-            reference_sequence=np.zeros((self.expert_agent.output_size, self.expert_agent.horizon)),
+            reference_sequence=reference_sequence,
             output_disturbance=np.zeros((self.expert_agent.output_size, self.expert_agent.horizon)),
             state_disturbance=noise_sequence
         )
@@ -351,12 +355,14 @@ class AugmentDataset():
         for traj_index, trajectory in enumerate(trajectories):
             history = self.feature_handler.reset_history()
             noise_queue = deque(maxlen=self.expert_agent.horizon)
+            ref_queue = deque(maxlen=self.expert_agent.horizon)
             for tran_index, transition in enumerate(trajectory):
                 if tran_index >= self.expert_agent.horizon + self.feature_handler.n_past:
                     hindsighted_tran = trajectory[tran_index - self.expert_agent.horizon]
                     expert_action = self._get_expert_action(
                         hindsighted_tran.state,
-                        noise_sequence=np.stack(noise_queue, axis=1)
+                        noise_sequence=np.stack(noise_queue, axis=1),
+                        reference_sequence=np.stack(ref_queue, axis=1)
                     )
                     all_transitions.append(
                         AugmentedTransition(
@@ -373,6 +379,9 @@ class AugmentDataset():
                         action=transition.action,
                     )
                 )
+                ref_queue.append(transition.reference
+                                 if transition.reference is not None
+                                 else np.zeros((self.expert_agent.output_size,)))
                 if tran_index >= self.expert_agent.horizon:
                     hindsighted_tran = trajectory[tran_index - self.expert_agent.horizon]
                     history = self.feature_handler.update_history(
