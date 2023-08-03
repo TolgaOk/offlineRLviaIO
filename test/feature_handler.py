@@ -13,9 +13,10 @@ class TestFeatureHandler(unittest.TestCase):
 
     def setUp(self) -> None:
         self.seed_rng = np.random.default_rng()
-        self.horizon = 5
-        self.n_past = 3
-        self.env_length = 51
+        self.horizon = 20
+        self.n_past = 8
+        self.env_length = 61
+        self.n_dataset = 1
 
         plant = FighterEnv(max_length=self.env_length, disturbance_bias=None)
         plant.reference_sequence = np.ones((plant.output_size, plant.max_length * 2)) * 0.01
@@ -31,10 +32,12 @@ class TestFeatureHandler(unittest.TestCase):
             horizon=self.horizon)
         self.expert_agent.optimizer = self.expert_agent.prepare_optimizer(env_params)
 
+        self.env_reset_seed = self.seed_rng.integers(0, 2**30)
+        env_reset_rng = np.random.default_rng(self.env_reset_seed)
         self.control_loop = ControlLoop(
             plant=plant,
             controller=self.expert_agent,
-            rng=np.random.default_rng(self.seed_rng.integers(0, 2**30))
+            rng=env_reset_rng
         )
 
         feature_handler = FeatureHandler(
@@ -50,7 +53,7 @@ class TestFeatureHandler(unittest.TestCase):
             soften_state_constraints=True,
             state_constraints_flag=True,
             action_constraints_flag=True,
-            dataset_length=self.env_length - (self.horizon + self.n_past),
+            dataset_length=(self.env_length - self.horizon) * self.n_dataset,
             feature_handler=feature_handler)
         self.augmenter = AugmentDataset(
             expert_agent=self.expert_agent,
@@ -65,15 +68,14 @@ class TestFeatureHandler(unittest.TestCase):
         )]
         augmented_trajectories = self.augmenter(trajectories)
 
-        for aug_tran, tran in zip(augmented_trajectories, trajectories[0][self.n_past:]):
+        for aug_tran, tran in zip(augmented_trajectories, trajectories[0]):
             self.assertTrue(np.allclose(aug_tran.expert_action, tran.action, atol=1e-7))
-
 
     def test_compute_and_train_discrepancy(self) -> None:
         trajectories = [self.control_loop.simulate(
             bias_aware=True,
             use_foresight=True,
-        )]
+        ) for _ in range(self.n_dataset)]
         self.io_agent.reset()
 
         aug_trajectories = self.augmenter(trajectories)
@@ -88,14 +90,39 @@ class TestFeatureHandler(unittest.TestCase):
             io_action = self.io_agent.compute(tran.state, None)[0]
             self.io_agent._past_action = tran.action
 
-            if index >= self.n_past:
-                aug_tran = aug_trajectories[index - self.n_past]
-                expert_action = aug_tran.expert_action
-                self.assertTrue(np.allclose(
-                    aug_tran.aug_state,
-                    self.io_agent.feature_handler.augment_state(tran.state, self.io_agent._history),
-                    atol=1e-7
-                ))
-                l2_losses.append(np.linalg.norm(expert_action - io_action, ord=2))
+            aug_tran = aug_trajectories[index]
+            expert_action = aug_tran.expert_action
+            self.assertTrue(np.allclose(
+                aug_tran.aug_state,
+                self.io_agent.feature_handler.augment_state(tran.state, self.io_agent._history),
+                atol=1e-7
+            ))
+            l2_losses.append(np.linalg.norm(expert_action - io_action, ord=2))
 
-        self.assertTrue(np.mean(l2_losses) < 1e-1)
+        self.assertTrue(np.mean(l2_losses) < 1e-1, f"Average error: {np.mean(l2_losses)}")
+
+    def test_trajectory_fit(self) -> None:
+        trajectories = [self.control_loop.simulate(
+            bias_aware=True,
+            use_foresight=True,
+        ) for _ in range(self.n_dataset)]
+        self.io_agent.reset()
+
+        aug_trajectories = self.augmenter(trajectories)
+
+        self.io_agent.train(aug_trajectories, rng=np.random.default_rng())
+        self.io_agent.action_optimizer = self.io_agent.prepare_action_optimizer()
+
+        io_control_loop = ControlLoop(
+            plant=self.control_loop.plant,
+            controller=self.io_agent,
+            rng=np.random.default_rng(self.env_reset_seed)
+        )
+        io_trajectory = io_control_loop.simulate(
+            bias_aware=True,
+            use_foresight=False,
+        )
+
+        average_io_cost = np.mean([t.cost for t in io_trajectory])
+        average_mpc_cost = np.mean([t.cost for t in trajectories[0]])
+        self.assertTrue(np.allclose(average_io_cost, average_mpc_cost, atol=1.0))
