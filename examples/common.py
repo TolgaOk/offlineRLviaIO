@@ -127,6 +127,7 @@ def prepare_io(dataset: List[Transition],
                expert_class: Union[Type[MPC], Type[RobustMPC]],
                expert_kwargs: Dict[str, Any],
                n_past: int = 1,
+               add_bias: bool = True,
                ) -> Tuple[Union[
                    Plant,
                    FeatureHandler,
@@ -138,7 +139,7 @@ def prepare_io(dataset: List[Transition],
     feature_handler = FeatureHandler(
         params=nominal_model,
         n_past=n_past,
-        add_bias=True,
+        add_bias=add_bias,
         use_action_regressor=False,
         use_noise_regressor=True,
         use_state_regressor=False)
@@ -190,6 +191,7 @@ def run_io_mpc(dataset: List[Transition],
                plant: Plant,
                dataset_permute_rng: np.random.Generator,
                n_past: int = 1,
+               add_bias: bool = True,
                dataset_length: int = 300,
                bias_aware: bool = True,
                expert_horizon: int = 20,
@@ -216,6 +218,7 @@ def run_io_mpc(dataset: List[Transition],
         expert_class=MPC,
         expert_kwargs={"horizon": expert_horizon},
         n_past=n_past,
+        add_bias=add_bias,
     )
 
     return run_io(
@@ -233,6 +236,7 @@ def run_io_rmpc(dataset: List[Transition],
                 dataset_permute_rng: np.random.Generator,
                 expert_rho: float,
                 n_past: int = 1,
+                add_bias: bool = True,
                 dataset_length: int = 300,
                 bias_aware: bool = True,
                 expert_horizon: int = 20,
@@ -264,6 +268,7 @@ def run_io_rmpc(dataset: List[Transition],
             "input_constraints_flag": True
         },
         n_past=n_past,
+        add_bias=add_bias,
     )
     return run_io(
         plant=linearized_plant,
