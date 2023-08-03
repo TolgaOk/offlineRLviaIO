@@ -105,7 +105,6 @@ class IOController():
                 f"Action optimization failed with status: {self.action_optimizer.problem.status}")
         self._past_state = state.copy()
         self._past_action = self.action_optimizer.variables["action"].value.copy()
-
         return self.action_optimizer.variables["action"].value, None
 
     def reset(self) -> None:
@@ -129,15 +128,15 @@ class IOController():
             constraint_vector = cp.Parameter((self.polytope_size,))
 
         objective = (
-            cp.quad_form(action, (self._q_theta_uu + self._q_theta_uu.T) / 2)
+            cp.quad_form(action, self._q_theta_uu)
             + 2 * cp.sum(cp.multiply(state, self._q_theta_su @ action))
         )
 
         if (self.state_constraints_flag and self.params.constraints.state) and self.soften_state_constraints:
             slack_state = cp.Variable(self.params.constraints.state.vector.shape[0])
-            objective += + self.softening_penalty * cp.norm(slack_state, 2)**2
-            slack_action = cp.Variable(
-                self.polytope_size - self.params.constraints.state.vector.shape[0])
+            objective = objective + self.softening_penalty * cp.norm(slack_state, 2)**2
+            slack_action = np.zeros((
+                self.polytope_size - self.params.constraints.state.vector.shape[0],))
             slack = cp.hstack([slack_action, slack_state])
 
         constraints = []
@@ -175,6 +174,9 @@ class IOController():
         """
         constraint_matrices = []
         constraint_vectors = []
+        if (self.action_constraints_flag) and (self.params.constraints.action is not None):
+            constraint_matrices.append(self.params.constraints.action.matrix)
+            constraint_vectors.append(self.params.constraints.action.vector)
         if (self.state_constraints_flag) and (self.params.constraints.state is not None):
             constraint_matrices.append(
                 self.params.constraints.state.matrix @ self.params.matrices.b_matrix
@@ -183,9 +185,6 @@ class IOController():
                 self.params.constraints.state.vector
                 - self.params.constraints.state.matrix @ self.params.matrices.a_matrix @ state
             )
-        if (self.action_constraints_flag) and (self.params.constraints.action is not None):
-            constraint_matrices.append(self.params.constraints.action.matrix)
-            constraint_vectors.append(self.params.constraints.action.vector)
         constraint_matrix = np.concatenate(constraint_matrices, axis=0)
         constraint_vector = np.concatenate(constraint_vectors, axis=0)
         return (constraint_matrix, constraint_vector)
@@ -250,7 +249,7 @@ class IOController():
             lambda_var = cp.Variable((self.polytope_size, self.dataset_length))
 
         q_theta_su = cp.Variable((self.aug_state_size, self.action_size))
-        q_theta_uu = cp.Variable((self.action_size, self.action_size))
+        q_theta_uu = cp.Variable((self.action_size, self.action_size), symmetric=True)
 
         objective = (cp.sum(gamma_var) / 4
                      + cp.sum(cp.multiply(actions, q_theta_uu @ actions))
@@ -357,7 +356,7 @@ class AugmentDataset():
             noise_queue = deque(maxlen=self.expert_agent.horizon)
             ref_queue = deque(maxlen=self.expert_agent.horizon)
             for tran_index, transition in enumerate(trajectory):
-                if tran_index >= self.expert_agent.horizon + self.feature_handler.n_past:
+                if tran_index >= self.expert_agent.horizon:
                     hindsighted_tran = trajectory[tran_index - self.expert_agent.horizon]
                     expert_action = self._get_expert_action(
                         hindsighted_tran.state,
