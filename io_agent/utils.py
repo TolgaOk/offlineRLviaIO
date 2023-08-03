@@ -123,6 +123,8 @@ class FeatureHandler():
         Returns:
             Dict[str, np.ndarray]: Updated history
         """
+        if self.n_past == 0:
+            return history
         noise = self.infer_noise(
             state=state,
             next_state=next_state,
@@ -151,4 +153,5 @@ class FeatureHandler():
                 features.append(history[name].flatten())
         if self.add_bias:
             features.append(np.ones((1,)))
-        return np.concatenate([state, *features])
+        aug_state = np.concatenate([state, *features])
+        return aug_state
