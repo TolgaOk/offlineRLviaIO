@@ -401,7 +401,7 @@ class LinearizationWrapper(gym.ObservationWrapper):
         return np.concatenate([obs, np.ones_like(obs)])
 
     def nominal_model(self,
-                      lin_point: InputValues,
+                      lin_point: Optional[InputValues] = None,
                       discretization_method: str = "exact"
                       ) -> NominalLinearEnvParams:
         if lin_point is None:
