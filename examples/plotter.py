@@ -74,6 +74,9 @@ def tube_figure(cost_data: Dict[str, Dict[int, List[float]]],
                 title: str,
                 color_list: List[str] = px.colors.qualitative.T10,
                 percentiles: Tuple[int] = (20, 80),
+                log_xaxis: bool = False,
+                log_yaxis: bool = False,
+                xaxis_name: str = "uncertainty radius",
                 ) -> go.FigureWidget:
     """ Make error plot as in Figure 2.a and 2.b
 
@@ -96,7 +99,6 @@ def tube_figure(cost_data: Dict[str, Dict[int, List[float]]],
     for color, cost_dict, label in zip(colors, cost_data, labels):
         rho_values = {rho: np.percentile(cost_list, [percentile_lower, 50, percentile_up])
                       for rho, cost_list in cost_dict.items()}
-
         fig.add_trace(go.Scatter(
             x=list(rho_values.keys()),
             y=[item[1] for item in rho_values.values()],
@@ -146,11 +148,12 @@ def tube_figure(cost_data: Dict[str, Dict[int, List[float]]],
         yaxis=dict(
             **common_axis_layout,
             title=dict(text="costs"),
+            type="log" if log_yaxis else None
         ),
         xaxis=dict(
             **common_axis_layout,
-            title=dict(text="uncertainty radius"),
-            type="log"
+            title=dict(text=xaxis_name),
+            type="log" if log_xaxis else None
         ),
         font=dict(
             size=12,
