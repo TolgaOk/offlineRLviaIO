@@ -138,6 +138,8 @@ class IOController():
             slack_action = np.zeros((
                 self.polytope_size - self.params.constraints.state.vector.shape[0],))
             slack = cp.hstack([slack_action, slack_state])
+        else:
+            slack = np.zeros((self.polytope_size,))
 
         constraints = []
         if self.include_constraints:
