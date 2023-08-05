@@ -10,11 +10,11 @@ from gymnasium import spaces
 from io_agent.plant.base import (Plant,
                                  QuadraticCosts,
                                  LinearConstraints,
+                                 LinearConstraint,
                                  InputValues,
                                  SystemInput,
                                  DynamicalSystem,
-                                 Disturbances,
-                                 NominalLinearEnvParams)
+                                 Disturbances)
 
 
 costs = QuadraticCosts(
@@ -22,7 +22,19 @@ costs = QuadraticCosts(
     action=np.diag([0.1, 0.05]),
     final=np.eye(2)
 )
-constraints = LinearConstraints()
+constraints = LinearConstraints(
+    action=LinearConstraint(
+        matrix=np.array([
+            [1, 0],
+            [-1, 0],
+            [0, 1],
+            [0, -1]
+        ]),
+        vector=np.array([
+            100, 0, 100, 0
+        ])
+    )
+)
 
 
 @dataclass
@@ -45,12 +57,13 @@ class DualHeaterEnv(Plant):
 
     def __init__(self,
                  max_length: int,
-                 disturbance_bias: Optional[np.ndarray] = None,
+                 noisy: bool = True,
                  ) -> None:
         self.dt = 10
         self.ambient_temp = 23
         self.iteration = None
         self.reference_temp = np.array([55.0, 45.0])
+        self.noisy = noisy
         self.dyn_sys = self.symbolic_dynamical_system()
 
         self.observation_space = spaces.Box(
@@ -71,7 +84,7 @@ class DualHeaterEnv(Plant):
             costs=costs,
             constraints=constraints,
             reference_sequence=np.ones((1, max_length * 2)) * self.reference_temp.reshape(-1, 1),
-            disturbance_bias=disturbance_bias,
+            disturbance_bias=None,
         )
 
     def symbolic_dynamical_system(self) -> DynamicalSystem:
@@ -136,9 +149,11 @@ class DualHeaterEnv(Plant):
         return values
 
     def generate_disturbance(self, rng: np.random.Generator) -> Disturbances:
+        ambient_temp_noise = (10 * rng.uniform() - 5) * int(self.noisy)
         return Disturbances(
-            state=(rng.normal(size=(1, self.max_length * 2)) +
-                   self.ambient_temp + 10 * rng.uniform() - 5)
+            # state=(rng.normal(size=(1, self.max_length * 2)) + ambient_temp_noise + self.ambient_temp)
+            state=(rng.normal(size=(1, self.max_length * 2)) + self.ambient_temp
+                   + 5 * np.sin(np.linspace(0, 12 * np.pi, self.max_length * 2) + np.pi/2 * rng.uniform()) - 5)
         )
 
     def _reset(self,
@@ -146,9 +161,7 @@ class DualHeaterEnv(Plant):
                options: Optional[Dict[str, Any]] = None
                ) -> Tuple[Union[np.ndarray, Optional[Dict[str, Any]]]]:
         self.iteration = 0
-        mean_init_state = ((self.ambient_temp - 5)
-                        #    - np.concatenate([self.reference_temp, self.reference_temp]
-                           ) + Constants.c2k
+        mean_init_state = ((self.ambient_temp - 5)) + Constants.c2k
         self.state = mean_init_state + \
             rng.uniform(-5., 5., size=(1,)) + rng.normal(size=(self.state_size,))
         return self.state, {}

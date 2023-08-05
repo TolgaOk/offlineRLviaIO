@@ -207,7 +207,10 @@ class Plant(gym.Env):
         """
         super().reset(seed=seed)
         rng = np.random.default_rng(seed)
-        bias_aware = options.get("bias_aware", False)
+        if options is None:
+            bias_aware = False
+        else:    
+            bias_aware = options.get("bias_aware")
         self.disturbances, biased_disturbances = self.reset_disturbances(rng)
         return_dist = self.disturbances if bias_aware else biased_disturbances
 
