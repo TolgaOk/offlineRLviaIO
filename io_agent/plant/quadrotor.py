@@ -79,11 +79,12 @@ class PeriodicExternalForceDisturbance(Disturbance):
 
 class QuadrotorEnv(Plant):
 
-    def __init__(self) -> None:
+    def __init__(self, use_exp_reward: bool = False) -> None:
 
         self.env = make("quadrotor", **task_config)
 
         self.reference_state = self.env.X_GOAL
+        self.use_exp_reward = use_exp_reward
         # self.reference_action = self.env.U_GOAL
         self.dyn_sys = self.symbolic_dynamical_system()
         self._state = None
@@ -203,10 +204,6 @@ class QuadrotorEnv(Plant):
         self._state = self.env.reset(seed=rng.integers(0, 2**30).item())
         return self._state, {}
     
-    # def reset(self, seed: Optional[int] = None) -> np.ndarray:
-    #     seed = seed or np.random.default_rng().integers(0, 2**30).item()
-    #     return super().reset(seed=seed, options=dict(bias_aware=True))
-
     def default_lin_point(self) -> InputValues:
         return InputValues(
             state=self.env.symbolic.X_EQ,
@@ -217,5 +214,6 @@ class QuadrotorEnv(Plant):
     def step(self,
              action: np.ndarray
              ) -> Tuple[Union[np.ndarray, float, bool, Optional[Dict[str, Any]]]]:
-        self._state, cost, done, info = self.env.step(action)
+        self._state, reward, done, info = self.env.step(action)
+        cost = np.exp(reward).item() if self.use_exp_reward else -reward
         return self._state, cost, done, done, info
