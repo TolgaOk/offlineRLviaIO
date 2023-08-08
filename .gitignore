@@ -6,3 +6,4 @@ local/
 *.html
 *_files
 *_data
+log

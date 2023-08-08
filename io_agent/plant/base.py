@@ -166,7 +166,7 @@ class Plant(gym.Env):
                options: Optional[Dict[str, Any]] = None
                ) -> Tuple[Union[np.ndarray, Optional[Dict[str, Disturbances]]]]:
         raise NotImplementedError
-    
+
     @abstractmethod
     def default_lin_point(self) -> Optional[InputValues]:
         raise NotImplemented
@@ -209,7 +209,7 @@ class Plant(gym.Env):
         rng = np.random.default_rng(seed)
         if options is None:
             bias_aware = False
-        else:    
+        else:
             bias_aware = options.get("bias_aware")
         self.disturbances, biased_disturbances = self.reset_disturbances(rng)
         return_dist = self.disturbances if bias_aware else biased_disturbances
@@ -412,3 +412,26 @@ class LinearizationWrapper(gym.ObservationWrapper):
         return self.env.linearization(
             lin_point=lin_point,
             discretization_method=discretization_method)
+
+
+class OldSchoolWrapper(gym.Wrapper):
+
+    def __init__(self, env: gym.Env, score_range: Optional[Tuple[float]] = None):
+        super().__init__(env)
+        self.score_range = score_range
+
+    def reset(self, *args, **kwargs) -> np.ndarray:
+        state, info = self.env.reset(*args, **kwargs)
+        return state
+
+    def step(self, action: np.ndarray, *args, **kwargs) -> Tuple[Union[np.ndarray, float, bool, Dict[str, Any]]]:
+        _action = self.env.action_space.low + \
+            (action + 1) / 2 * (self.env.action_space.high - self.env.action_space.low)
+        next_state, reward, termination, truncation, info = self.env.step(_action, *args, **kwargs)
+        return next_state, reward, termination or truncation, info
+
+    def get_normalized_score(self, score: float) -> float:
+        if self.score_range is not None:
+            min_score, max_score = self.score_range
+            return (score - min_score) / (max_score - min_score)
+        return score
