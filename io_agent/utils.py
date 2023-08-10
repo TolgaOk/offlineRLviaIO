@@ -24,6 +24,10 @@ class FeatureHandler():
                  use_state_regressor: bool,
                  use_action_regressor: bool,
                  use_noise_regressor: bool,
+                 noise_size: Optional[int] = None,
+                 state_size: Optional[int] = None,
+                 action_size: Optional[int] = None,
+                 output_size: Optional[int] = None,
                  ) -> None:
         """ Feature Handler for the IO agents
 
@@ -43,9 +47,10 @@ class FeatureHandler():
         self.use_action_regressor = use_action_regressor
         self.use_noise_regressor = use_noise_regressor
 
-        self.noise_size = params.matrices.e_matrix.shape[1]
-        self.state_size = params.matrices.a_matrix.shape[1]
-        self.action_size = params.matrices.b_matrix.shape[1]
+        self.noise_size = noise_size if noise_size is not None else params.matrices.e_matrix.shape[1]
+        self.state_size = state_size if state_size is not None else params.matrices.a_matrix.shape[1]
+        self.action_size = action_size if action_size is not None else params.matrices.b_matrix.shape[1]
+        self.output_size = output_size if output_size is not None else params.matrices.c_matrix.shape[0]
 
     @property
     def aug_state_size(self) -> int:
@@ -93,6 +98,8 @@ class FeatureHandler():
             np.ndarray: Inferred noise array of shape (W,) where W denotes
                 the noise size
         """
+        if self.params.matrices is None:
+            return np.zeros((self.noise_size,))
         return np.linalg.pinv(self.params.matrices.e_matrix) @ (
             next_state
             - self.params.matrices.a_matrix @ state

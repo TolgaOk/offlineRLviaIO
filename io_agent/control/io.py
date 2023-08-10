@@ -313,8 +313,9 @@ class AugmentDataset():
         feature_handler (FeatureHandler): State augmenter
     """
 
-    def __init__(self, expert_agent: Union[MPC, RobustMPC], feature_handler: FeatureHandler) -> None:
+    def __init__(self, expert_agent: Optional[Union[MPC, RobustMPC]], feature_handler: FeatureHandler) -> None:
         self.expert_agent = expert_agent
+        self.horizon = 0 if expert_agent is None else expert_agent.horizon
         self.feature_handler = feature_handler
 
     def _get_expert_action(self,
@@ -337,7 +338,7 @@ class AugmentDataset():
         action, _ = self.expert_agent.compute(
             initial_state=state,
             reference_sequence=reference_sequence,
-            output_disturbance=np.zeros((self.expert_agent.output_size, self.expert_agent.horizon)),
+            output_disturbance=np.zeros((self.feature_handler.output_size, self.horizon)),
             state_disturbance=noise_sequence
         )
         return action
@@ -355,16 +356,19 @@ class AugmentDataset():
         all_transitions = []
         for traj_index, trajectory in enumerate(trajectories):
             history = self.feature_handler.reset_history()
-            noise_queue = deque(maxlen=self.expert_agent.horizon)
-            ref_queue = deque(maxlen=self.expert_agent.horizon)
+            noise_queue = deque(maxlen=self.horizon)
+            ref_queue = deque(maxlen=self.horizon)
             for tran_index, transition in enumerate(trajectory):
-                if tran_index >= self.expert_agent.horizon:
-                    hindsighted_tran = trajectory[tran_index - self.expert_agent.horizon]
-                    expert_action = self._get_expert_action(
-                        hindsighted_tran.state,
-                        noise_sequence=np.stack(noise_queue, axis=1),
-                        reference_sequence=np.stack(ref_queue, axis=1)
-                    )
+                if tran_index >= self.horizon:
+                    hindsighted_tran = trajectory[tran_index - self.horizon]
+                    if self.expert_agent is not None:
+                        expert_action = self._get_expert_action(
+                            hindsighted_tran.state,
+                            noise_sequence=np.stack(noise_queue, axis=1),
+                            reference_sequence=np.stack(ref_queue, axis=1)
+                        )
+                    else:
+                        expert_action = hindsighted_tran.action
                     all_transitions.append(
                         AugmentedTransition(
                             aug_state=self.feature_handler.augment_state(
@@ -373,18 +377,19 @@ class AugmentDataset():
                             **asdict(hindsighted_tran)
                         )
                     )
-                noise_queue.append(
-                    self.feature_handler.infer_noise(
-                        state=transition.state,
-                        next_state=transition.next_state,
-                        action=transition.action,
+                if self.expert_agent is not None:
+                    noise_queue.append(
+                        self.feature_handler.infer_noise(
+                            state=transition.state,
+                            next_state=transition.next_state,
+                            action=transition.action,
+                        )
                     )
-                )
-                ref_queue.append(transition.reference
-                                 if transition.reference is not None
-                                 else np.zeros((self.expert_agent.output_size,)))
-                if tran_index >= self.expert_agent.horizon:
-                    hindsighted_tran = trajectory[tran_index - self.expert_agent.horizon]
+                    ref_queue.append(transition.reference
+                                    if transition.reference is not None
+                                    else np.zeros((self.feature_handler.output_size,)))
+                if tran_index >= self.horizon:
+                    hindsighted_tran = trajectory[tran_index - self.horizon]
                     history = self.feature_handler.update_history(
                         state=hindsighted_tran.state,
                         next_state=hindsighted_tran.next_state,

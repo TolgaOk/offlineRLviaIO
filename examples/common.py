@@ -1,7 +1,6 @@
 from typing import List, Dict, Union, Any, Callable, Tuple, Type
 from functools import partial
 import numpy as np
-from IPython.core.magic import register_cell_magic
 
 from io_agent.plant.base import Plant, LinearizationWrapper, InputValues
 from io_agent.evaluator import ControlLoop, Transition
