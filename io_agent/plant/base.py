@@ -112,9 +112,9 @@ class NominalLinearEnvParams():
         matrix, h_u denotes the action constraints and w denotes the state
         disturbance, and u denotes the action/input.
     """
-    matrices: LinearDiscreteSystem
-    constraints: LinearConstraints
-    costs: QuadraticCosts
+    matrices: Optional[LinearDiscreteSystem]
+    constraints: Optional[LinearConstraints]
+    costs: Optional[QuadraticCosts]
 
 
 class Plant(gym.Env):

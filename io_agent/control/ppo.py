@@ -1,4 +1,4 @@
-from typing import Tuple, Union, Optional, Type
+from typing import Tuple, Union, Optional, Type, Dict, Any
 import numpy as np
 
 try:
@@ -39,10 +39,11 @@ class PPoController():
               path: Optional[str] = None,
               total_timesteps: int = int(2e5),
               verbose: bool = True,
+              ppo_kwargs: Dict[str, Any] = {},
               **learn_kwargs
               ) -> PPO:
         vec_env = make_vec_env(env_fn, n_envs=n_envs, vec_env_cls=SubprocVecEnv)
-        model = PPO("MlpPolicy", vec_env, verbose=int(verbose), seed=seed)
+        model = PPO("MlpPolicy", vec_env, verbose=int(verbose), seed=seed, **ppo_kwargs)
         model.learn(total_timesteps=total_timesteps, progress_bar=False, **learn_kwargs)
         if path is not None:
             model.save(path)
