@@ -5,3 +5,4 @@ pandas
 plotly==5.6.0
 sympy==1.12
 tqdm
+seaborn
