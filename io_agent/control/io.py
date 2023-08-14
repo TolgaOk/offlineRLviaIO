@@ -56,12 +56,10 @@ class IOController():
         self.state_size = self.feature_handler.state_size
         self.aug_state_size = self.feature_handler.aug_state_size
         self.train_optimizer = self.prepare_train_optimizer()
+        self.action_optimizer = None
 
-        self._past_state = None
-        self._past_action = None
         self._q_theta_su = None
         self._q_theta_uu = None
-        self._history = None
 
     def compute(self,
                 state: np.ndarray,
@@ -87,6 +85,8 @@ class IOController():
         """
         if self._q_theta_su is None or self._q_theta_uu is None:
             return np.zeros((self.action_size,))
+        if self.action_optimizer is None:
+            raise RuntimeError("Action optimizer is not defined yet. Try running train first!")
         if self._past_state is not None and self._past_action is not None:
             self._history = self.feature_handler.update_history(
                 state=self._past_state,

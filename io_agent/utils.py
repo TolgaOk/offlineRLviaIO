@@ -127,6 +127,8 @@ class FeatureHandler():
         """
         if self.n_past == 0:
             return history
+        if self.params.matrices is None:
+            raise RuntimeError("Noise inference requires linear nominal model!")
         noise = self.infer_noise(
             state=state,
             next_state=next_state,
@@ -157,3 +159,6 @@ class FeatureHandler():
             features.append(np.ones((1,)))
         aug_state = np.concatenate([state, *features])
         return aug_state
+    
+    def original_state(self, aug_state: np.ndarray) -> np.ndarray:
+        return aug_state[:self.state_size]
