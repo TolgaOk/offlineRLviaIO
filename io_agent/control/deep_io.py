@@ -22,7 +22,8 @@ class IterativeIOController(torch.nn.Module, IOController):
                  include_constraints: bool = True,
                  action_constraints_flag: bool = True,
                  state_constraints_flag: bool = True,
-                 learning_rate: float = 1e-4
+                 learning_rate: float = 1e-4,
+                 lr_exp_decay: float = 0.98,
                  ):
         super().__init__()
         self.learning_rate = learning_rate
@@ -41,6 +42,9 @@ class IterativeIOController(torch.nn.Module, IOController):
             softening_penalty=1e9,
         )
 
+        self.scheduler = torch.optim.lr_scheduler.ExponentialLR(
+            self.train_optimizer, gamma=np.sqrt(lr_exp_decay).item())
+
     @staticmethod
     def softplus_epsilon(x, epsilon=1e-6):
         return torch.nn.functional.softplus(x) + epsilon + 1
@@ -54,7 +58,6 @@ class IterativeIOController(torch.nn.Module, IOController):
             triv="expm"
         )
         self.th_theta_su = torch.nn.Linear(self.action_size, self.aug_state_size, bias=False)
-
         return torch.optim.Adam(self.parameters(), lr=self.learning_rate)
 
     def q_fn(self,
@@ -71,26 +74,24 @@ class IterativeIOController(torch.nn.Module, IOController):
                                 theta_uu: torch.Tensor,
                                 theta_su: torch.Tensor,
                                 ) -> torch.Tensor:
-        batch_size, _ = aug_states.shape
-        actions = np.zeros((batch_size, self.action_size))
-        self._q_theta_uu = theta_uu.cpu().detach().numpy()
-        self._q_theta_su = theta_su.cpu().detach().numpy()
-        action_optimizer = self.prepare_action_optimizer()
+        if self.state_constraints_flag:
+            raise NotImplementedError("Iterative IO Controller does not support state constraints!")
 
-        for index, aug_state in enumerate(aug_states.cpu().detach().numpy()):
-            if self.include_constraints:
-                state = self.feature_handler.original_state(aug_state)
-                constraint_matrix, constraint_vector = self.calculate_constraints(state)
-                action_optimizer.parameters["constraint_matrix"].value = constraint_matrix
-                action_optimizer.parameters["constraint_vector"].value = constraint_vector
-            action_optimizer.parameters["state"].value = aug_state
-            action_optimizer.problem.solve()
-            if action_optimizer.problem.status in ("infeasible", "unbounded"):
-                raise RuntimeError(
-                    f"Action optimization failed with status: {action_optimizer.problem.status}")
-            actions[index] = action_optimizer.variables["action"].value
+        min_actions = -(torch.linalg.inv(theta_uu) @ theta_su.T @ aug_states.T).T
+        if (len(self.params.constraints.action.vector) == 2 * self.action_size
+            and np.allclose(self.params.constraints.action.matrix[:self.action_size], np.eye(self.action_size))
+                and np.allclose(self.params.constraints.action.matrix[self.action_size:], -np.eye(self.action_size))):
+            action_high = torch.from_numpy(self.params.constraints.action.vector[:self.action_size].reshape(
+                1, -1)).float().to(aug_states.device)
+            action_low = -torch.from_numpy(self.params.constraints.action.vector[self.action_size:].reshape(
+                1, -1)).float().to(aug_states.device)
+            min_actions = min_actions.clamp(
+                min=action_low,
+                max=action_high)
+        else:
+            raise NotImplementedError("Only rectengular action constraints are supported!")
 
-        return torch.from_numpy(actions).float().to(aug_states.device)
+        return min_actions
 
     def loss(self, aug_states: torch.Tensor, exp_action: torch.Tensor) -> torch.Tensor:
         theta_uu = self.th_theta_uu.weight
@@ -107,34 +108,35 @@ class IterativeIOController(torch.nn.Module, IOController):
               ) -> None:
         train_losses = []
 
-        loading_bar = (partial(tqdm)
-                       if verbose else lambda x: x)
-        for epoch in loading_bar(range(epochs)):
-            dataset_indices = rng.permutation(len(augmented_dataset))
-            data_size = len(dataset_indices)
+        with tqdm(total=epochs, disable=not verbose) as pbar:
+            for epoch in range(epochs):
+                dataset_indices = rng.permutation(len(augmented_dataset))
+                data_size = len(dataset_indices)
 
-            epoch_losses = []
-            for index in range(0, data_size, batch_size):
-                indices = dataset_indices[index: index + batch_size]
+                epoch_losses = []
+                for index in range(0, data_size, batch_size):
+                    indices = dataset_indices[index: index + batch_size]
 
-                aug_states = np.stack(
-                    [augmented_dataset[_index].aug_state for _index in indices], axis=0)
-                exp_actions = np.stack(
-                    [augmented_dataset[_index].action for _index in indices], axis=0)
+                    aug_states = np.stack(
+                        [augmented_dataset[_index].aug_state for _index in indices], axis=0)
+                    exp_actions = np.stack(
+                        [augmented_dataset[_index].expert_action for _index in indices], axis=0)
 
-                loss = self.loss(
-                    torch.from_numpy(aug_states).float(),
-                    torch.from_numpy(exp_actions).float()
-                ).mean(-1)
+                    loss = self.loss(
+                        torch.from_numpy(aug_states).float(),
+                        torch.from_numpy(exp_actions).float()
+                    ).mean(-1)
 
-                self.train_optimizer.zero_grad()
-                loss.backward()
-                self.train_optimizer.step()
-                epoch_losses.append(loss.item())
+                    self.train_optimizer.zero_grad()
+                    loss.backward()
+                    self.train_optimizer.step()
+                    epoch_losses.append(loss.item())
 
-            train_losses.append(np.mean(epoch_losses))
-            if verbose:
-                print(f"Epoch: {epoch + 1}, loss: {train_losses[-1]}")
+                train_losses.append(np.mean(epoch_losses))
+                self.scheduler.step()
+                if verbose:
+                    pbar.set_postfix({"loss": train_losses[-1], "lr": self.scheduler.get_lr()[-1]})
+                    pbar.update()
 
         self._q_theta_uu = self.th_theta_uu.weight.cpu().detach().numpy()
         self._q_theta_su = self.th_theta_su.weight.cpu().detach().numpy()
