@@ -1,5 +1,6 @@
 from typing import Dict, Optional
 import numpy as np
+from itertools import product
 from dataclasses import dataclass
 
 from io_agent.evaluator import Transition
@@ -24,6 +25,11 @@ class FeatureHandler():
                  use_state_regressor: bool,
                  use_action_regressor: bool,
                  use_noise_regressor: bool,
+                 use_co_product: bool = False,
+                 use_sinusoidal: bool = False,
+                 scale_factor: float = 1.0,
+                 state_high: Optional[np.ndarray] = None,
+                 state_low: Optional[np.ndarray] = None,
                  noise_size: Optional[int] = None,
                  state_size: Optional[int] = None,
                  action_size: Optional[int] = None,
@@ -43,14 +49,21 @@ class FeatureHandler():
         self.params = params
         self.n_past = n_past
         self.add_bias = add_bias
+        self.use_co_product = use_co_product
+        self.use_sinusoidal = use_sinusoidal
+        self.scale_factor = scale_factor
         self.use_state_regressor = use_state_regressor
         self.use_action_regressor = use_action_regressor
         self.use_noise_regressor = use_noise_regressor
+        self.state_high = state_high
+        self.state_low = state_low
 
         self.noise_size = noise_size if noise_size is not None else params.matrices.e_matrix.shape[1]
         self.state_size = state_size if state_size is not None else params.matrices.a_matrix.shape[1]
-        self.action_size = action_size if action_size is not None else params.matrices.b_matrix.shape[1]
-        self.output_size = output_size if output_size is not None else params.matrices.c_matrix.shape[0]
+        self.action_size = action_size if action_size is not None else params.matrices.b_matrix.shape[
+            1]
+        self.output_size = output_size if output_size is not None else params.matrices.c_matrix.shape[
+            0]
 
     @property
     def aug_state_size(self) -> int:
@@ -62,6 +75,8 @@ class FeatureHandler():
         return (
             self.state_size
             + int(self.add_bias)
+            + (self.state_size ** 2) * int(self.use_co_product)
+            + (self.state_size * 8) * int(self.use_sinusoidal)
             + (self.state_size * self.n_past) * int(self.use_state_regressor)
             + (self.noise_size * self.n_past) * int(self.use_noise_regressor)
             + (self.action_size * self.n_past) * int(self.use_action_regressor)
@@ -127,8 +142,6 @@ class FeatureHandler():
         """
         if self.n_past == 0:
             return history
-        if self.params.matrices is None:
-            raise RuntimeError("Noise inference requires linear nominal model!")
         noise = self.infer_noise(
             state=state,
             next_state=next_state,
@@ -137,6 +150,15 @@ class FeatureHandler():
             history[name][1:] = history[name][:-1]
             history[name][0] = new_vector
         return history
+    
+    def normalize(self, state: np.ndarray) -> np.ndarray:
+        if (self.state_high is None) or (self.state_low is None):
+            return state
+        state_range = (self.state_high - self.state_low)
+        if len(state.shape) == 1:
+            return  (state - self.state_low) / state_range * 2 - 1
+        if len(state.shape) == 2:
+            return (state - self.state_low.reshape(1, -1)) / state_range.reshape(1, -1) * 2 - 1
 
     def augment_state(self, state: np.ndarray, history: Dict[str, np.ndarray]) -> np.ndarray:
         """ Augment the state using the given history
@@ -149,16 +171,25 @@ class FeatureHandler():
         Returns:
             np.ndarray: Augmented state/features
         """
+        state = self.normalize(state)
         features = []
-        for name, condition in (("noise", self.use_noise_regressor),
-                                ("state", self.use_state_regressor),
-                                ("action", self.use_action_regressor)):
-            if condition:
-                features.append(history[name].flatten())
+
+        if self.use_noise_regressor:
+            features.append(history["noise"].flatten())
+        if self.use_state_regressor:
+            features.append(self.normalize(history["state"]).flatten() * self.scale_factor)
+        if self.use_action_regressor:
+            features.append(history["action"].flatten())
         if self.add_bias:
             features.append(np.ones((1,)))
-        aug_state = np.concatenate([state, *features])
+        if self.use_co_product:
+            features.append((state.reshape(-1, 1) * state.reshape(1, -1)).ravel()
+                            * (self.scale_factor ** 2))
+        if self.use_sinusoidal:
+            for fn, freq in product((np.cos, np.sin), (1, 2, 4, 8)):
+                features.append(fn(np.pi * state * self.scale_factor * freq))
+        aug_state = np.concatenate([state * self.scale_factor, *features])
         return aug_state
-    
+
     def original_state(self, aug_state: np.ndarray) -> np.ndarray:
         return aug_state[:self.state_size]
