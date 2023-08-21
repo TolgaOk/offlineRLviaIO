@@ -90,7 +90,7 @@ class FeatureHandler():
         """
         return dict(
             noise=np.zeros((self.n_past, self.noise_size)),
-            state=np.zeros((self.n_past, self.state_size)),
+            state=np.ones((self.n_past, self.state_size)) * (self.state_high - self.state_low) / 2 + self.state_low,
             action=np.zeros((self.n_past, self.action_size)),
         )
 
