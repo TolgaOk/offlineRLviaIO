@@ -18,10 +18,7 @@ from offlinerlkit.utils.logger import Logger
 from offlinerlkit.policy_trainer import MFPolicyTrainer
 from offlinerlkit.policy import CQLPolicy
 
-from io_agent.plant.mujoco import Walker2dEnv, OldSchoolWrapper, HalfCheetahEnv
-
-from common import run_mpc
-from utils import parallelize, save_experiment, load_experiment
+from io_agent.plant.mujoco import Walker2dEnv, OldSchoolWrapper, HalfCheetahEnv, HopperEnv
 
 
 @dataclass
@@ -59,6 +56,8 @@ def train_mujoco_cql(datasize: int, device: str, seed: int, env_name: str):
         env = Walker2dEnv()
     elif env_name == "cheetah":
         env = HalfCheetahEnv()
+    elif env_name == "hopper":
+        env = HopperEnv()
     args = Args(
         seed=seed,
         obs_shape=env.observation_space.shape,
@@ -110,6 +109,7 @@ def train_mujoco_cql(datasize: int, device: str, seed: int, env_name: str):
         cql_alpha_lr=args.cql_alpha_lr,
         num_repeart_actions=args.num_repeat_actions
     )
+    print("Number of parameters:", sum(param.numel() for key, param in policy.named_parameters()))
 
     output_config = {
         "consoleout_backup": "stdout",

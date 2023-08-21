@@ -70,6 +70,9 @@ class MuJoCoEnv(Plant):
         self._state, reward, done, info = self.env.step(action)
         return self._state, reward, done, False, info
     
+    def render(self, *args, **kwargs) -> Any:
+        return self.env.render(*args, **kwargs)
+    
 
 class Walker2dEnv(MuJoCoEnv):
 
@@ -81,6 +84,12 @@ class HalfCheetahEnv(MuJoCoEnv):
 
     def __init__(self) -> None:
         env = gym.make("halfcheetah-medium-v2")
+        super().__init__(env)
+
+class HopperEnv(MuJoCoEnv):
+
+    def __init__(self) -> None:
+        env = gym.make("hopper-medium-v2")
         super().__init__(env)
 
 
