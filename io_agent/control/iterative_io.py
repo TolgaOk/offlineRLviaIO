@@ -132,7 +132,8 @@ class IterativeIOController(torch.nn.Module, IOController):
         return action, None
 
     def loss(self, aug_states: torch.Tensor, exp_action: torch.Tensor) -> torch.Tensor:
-        min_actions = self.batch_minimizer_actions(aug_states)
+        with torch.no_grad():
+            min_actions = self.batch_minimizer_actions(aug_states)
         return (self.q_fn(aug_states, exp_action) - self.q_fn(aug_states, min_actions))
 
     def train(self,
