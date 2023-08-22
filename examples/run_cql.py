@@ -1,14 +1,16 @@
-from typing import Tuple, Optional, List
+from typing import Tuple, Optional, List, Dict
 import os
 import argparse
 from dataclasses import dataclass, asdict
-from collections import namedtuple, defaultdict
+from collections import namedtuple, defaultdict, deque
 from itertools import chain, product
 from functools import partial
 import datetime
 import numpy as np
 import torch
+import time
 import json
+from tqdm import tqdm
 import multiprocessing
 
 from offlinerlkit.nets import MLP
@@ -20,9 +22,8 @@ from offlinerlkit.policy import CQLPolicy
 
 from io_agent.plant.base import OldSchoolWrapper
 from io_agent.plant.quadrotor import QuadrotorEnv
-
-from common import run_mpc
-from utils import parallelize, save_experiment, load_experiment
+from io_agent.runner.basic import run_mpc
+from io_agent.utils import parallelize, save_experiment, load_experiment
 
 
 @dataclass
@@ -99,47 +100,10 @@ def train_quadrotor_cql(n_trajectories: int, device: str, seed: int):
     algo_name: str = "cql"
     task: str = "Quadrotor2d"
     timestamp = datetime.datetime.now().strftime("%y-%m%d-%H%M%S")
-    log_dir = f"/mnt/DEPO/tok/sl-to-rl/{task}/{algo_name}/seed_{seed}-size_{n_trajectories}/{timestamp}"
+    log_dir = f"./offlineRL_data/{task}/{algo_name}/seed_{seed}-size_{n_trajectories}/{timestamp}"
     os.makedirs(log_dir, exist_ok=True)
 
-    actor_backbone = MLP(input_dim=np.prod(args.obs_shape), hidden_dims=args.hidden_dims)
-    critic1_backbone = MLP(input_dim=np.prod(args.obs_shape) +
-                           args.action_dim, hidden_dims=args.hidden_dims)
-    critic2_backbone = MLP(input_dim=np.prod(args.obs_shape) +
-                           args.action_dim, hidden_dims=args.hidden_dims)
-    dist = TanhDiagGaussian(
-        latent_dim=getattr(actor_backbone, "output_dim"),
-        output_dim=args.action_dim,
-        unbounded=True,
-        conditioned_sigma=True
-    )
-    actor = ActorProb(actor_backbone, dist, args.device)
-    critic1 = Critic(critic1_backbone, args.device)
-    critic2 = Critic(critic2_backbone, args.device)
-    actor_optim = torch.optim.Adam(actor.parameters(), lr=args.actor_lr)
-    critic1_optim = torch.optim.Adam(critic1.parameters(), lr=args.critic_lr)
-    critic2_optim = torch.optim.Adam(critic2.parameters(), lr=args.critic_lr)
-
-    policy = CQLPolicy(
-        actor,
-        critic1,
-        critic2,
-        actor_optim,
-        critic1_optim,
-        critic2_optim,
-        action_space=env.action_space,
-        tau=args.tau,
-        gamma=args.gamma,
-        alpha=args.alpha,
-        cql_weight=args.cql_weight,
-        temperature=args.temperature,
-        max_q_backup=args.max_q_backup,
-        deterministic_backup=args.deterministic_backup,
-        with_lagrange=args.with_lagrange,
-        lagrange_threshold=args.lagrange_threshold,
-        cql_alpha_lr=args.cql_alpha_lr,
-        num_repeart_actions=args.num_repeat_actions
-    )
+    policy = make_policy(args, env)
 
     output_config = {
         "consoleout_backup": "stdout",
@@ -179,7 +143,7 @@ def train_quadrotor_cql(n_trajectories: int, device: str, seed: int):
     )
     buffer.load_dataset(dict_dataset)
 
-    policy_trainer = MFPolicyTrainer(
+    policy_trainer = AutoRecordTrainer(
         policy=policy,
         eval_env=OldSchoolWrapper(env, score_range=(0, 300)),
         buffer=buffer,
@@ -232,6 +196,59 @@ def make_policy(args: "Args", env: QuadrotorEnv):
         num_repeart_actions=args.num_repeat_actions
     )
     return policy
+
+
+class AutoRecordTrainer(MFPolicyTrainer):
+
+    def train(self) -> Dict[str, float]:
+        start_time = time.time()
+
+        num_timesteps = 0
+        last_10_performance = deque(maxlen=10)
+        # train loop
+        for e in range(1, self._epoch + 1):
+
+            self.policy.train()
+
+            pbar = tqdm(range(self._step_per_epoch), desc=f"Epoch #{e}/{self._epoch}")
+            for it in pbar:
+                batch = self.buffer.sample(self._batch_size)
+                loss = self.policy.learn(batch)
+                pbar.set_postfix(**loss)
+
+                for k, v in loss.items():
+                    self.logger.logkv_mean(k, v)
+
+                num_timesteps += 1
+
+            if self.lr_scheduler is not None:
+                self.lr_scheduler.step()
+
+            # evaluate current policy
+            eval_info = self._evaluate()
+            ep_reward_mean, ep_reward_std = np.mean(
+                eval_info["eval/episode_reward"]), np.std(eval_info["eval/episode_reward"])
+            ep_length_mean, ep_length_std = np.mean(
+                eval_info["eval/episode_length"]), np.std(eval_info["eval/episode_length"])
+            norm_ep_rew_mean = self.eval_env.get_normalized_score(ep_reward_mean) * 100
+            norm_ep_rew_std = self.eval_env.get_normalized_score(ep_reward_std) * 100
+            last_10_performance.append(norm_ep_rew_mean)
+            self.logger.logkv("eval/normalized_episode_reward", norm_ep_rew_mean)
+            self.logger.logkv("eval/normalized_episode_reward_std", norm_ep_rew_std)
+            self.logger.logkv("eval/episode_length", ep_length_mean)
+            self.logger.logkv("eval/episode_length_std", ep_length_std)
+            self.logger.set_timestep(num_timesteps)
+            self.logger.dumpkvs()
+
+            # save checkpoint
+            torch.save(self.policy.state_dict(), os.path.join(
+                self.logger.checkpoint_dir, "policy.pth"))
+
+        self.logger.log("total time: {:.2f}s".format(time.time() - start_time))
+        torch.save(self.policy.state_dict(), os.path.join(self.logger.checkpoint_dir, "policy_{0:04d}.pth".format(e)))
+        self.logger.close()
+
+        return {"last_10_performance": np.mean(last_10_performance)}
 
 
 def evaluate(model: CQLPolicy, env: QuadrotorEnv, trial_seeds: List[int]):
