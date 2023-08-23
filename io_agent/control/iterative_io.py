@@ -11,7 +11,6 @@ from io_agent.plant.base import (NominalLinearEnvParams,
 from io_agent.utils import AugmentedTransition, FeatureHandler
 from io_agent.control.io import IOController
 from io_agent.plant.base import NominalLinearEnvParams, LinearConstraints
-from io_agent.control.mpc import Optimizer
 
 
 class IterativeIOController(torch.nn.Module, IOController):
@@ -24,12 +23,10 @@ class IterativeIOController(torch.nn.Module, IOController):
                  state_constraints_flag: bool = True,
                  learning_rate: float = 1e-4,
                  lr_exp_decay: float = 0.98,
-                 eval_batch_size: int = 512,
                  device: str = "cpu",
                  ):
         super().__init__()
         self.learning_rate = learning_rate
-        self.eval_batch_size = eval_batch_size
         IOController.__init__(
             self,
             params=NominalLinearEnvParams(
@@ -75,13 +72,7 @@ class IterativeIOController(torch.nn.Module, IOController):
 
         self.th_theta_uu = torch.nn.Parameter(init_psd_matrix)
         self.th_theta_su = torch.nn.Parameter(torch.randn(self.aug_state_size, self.action_size))
-        return torch.optim.Adam(self.parameters(),
-                                lr=self.learning_rate,
-                                #    momentum=0.0,
-                                #    dampening=0,
-                                #    weight_decay=0,
-                                #    nesterov=False
-                                )
+        return torch.optim.Adam(self.parameters(), lr=self.learning_rate)
 
     def project_theta_uu(self):
         eig_vals, eig_vecs = torch.linalg.eigh(self.th_theta_uu.data)
@@ -144,10 +135,7 @@ class IterativeIOController(torch.nn.Module, IOController):
         th_aug_states = self.to_torch(np.stack([tran.aug_state for tran in augmented_dataset]))
         th_exp_actions = self.to_torch(np.stack([tran.expert_action for tran in augmented_dataset]))
 
-        eval_indices = rng.permutation(len(augmented_dataset))[:self.eval_batch_size]
-
         while True:
-            step_losses = []
             dataset_indices = rng.permutation(len(augmented_dataset))
             data_size = len(dataset_indices)
 
@@ -165,13 +153,6 @@ class IterativeIOController(torch.nn.Module, IOController):
                 self.train_optimizer.step()
                 self.project_theta_uu()
                 within_epoch_losses.append(loss.item())
-
-                # with torch.no_grad():
-                #     loss = self.loss(
-                #         th_aug_states[eval_indices],
-                #         th_exp_actions[eval_indices]
-                #     ).mean(-1).item()
-                #     step_losses.append(loss)
 
             self.scheduler.step()
             self._q_theta_uu = self.th_theta_uu.cpu().detach().numpy()

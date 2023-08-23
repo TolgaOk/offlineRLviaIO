@@ -261,9 +261,10 @@ def parallelize(n_proc: int,
     return results
 
 
-def save_experiment(values: Any, seed: int, exp_dir: str, name: str) -> None:
+def save_experiment(values: Any, seed: Optional[int], exp_dir: str, name: str) -> None:
     os.makedirs(exp_dir, exist_ok=True)
-    with open(os.path.join(exp_dir, f"{name}-{seed}"), "wb") as fobj:
+    seed_suffix = f"-{seed}" if seed is not None else ""
+    with open(os.path.join(exp_dir, f"{name}{seed_suffix}"), "wb") as fobj:
         pickle.dump(values, fobj)
 
 
