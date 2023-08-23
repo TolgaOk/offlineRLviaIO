@@ -9,8 +9,6 @@ from io_agent.control.rmpc import RobustMPC
 from io_agent.control.io import IOController, AugmentedTransition, AugmentDataset
 from io_agent.utils import FeatureHandler
 
-from utils import try_solve
-
 
 def run_agent(agent: Union[MPC, IOController],
               plant: Plant,
@@ -157,7 +155,6 @@ def prepare_io(dataset: List[Transition],
     return plant, feature_handler, augmented_dataset
 
 
-# @try_solve(patience=2)
 def run_io(feature_handler: FeatureHandler,
            plant: Plant,
            augmented_dataset: List[AugmentedTransition],

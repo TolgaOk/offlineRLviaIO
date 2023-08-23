@@ -1,11 +1,9 @@
 from typing import List, Tuple
 from functools import partial
-import numpy as np
+import datetime
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 import json
-
-from functools import partial
 from tqdm.notebook import tqdm
 import numpy as np
 import torch
@@ -13,14 +11,15 @@ import torch
 from io_agent.plant.base import Plant
 from io_agent.plant.mujoco import MuJoCoEnv
 from io_agent.evaluator import Transition
-from io_agent.control.io import FeatureHandler, AugmentedTransition, AugmentDataset
+from io_agent.control.io import FeatureHandler, AugmentDataset
 from io_agent.control.iterative_io import IterativeIOController
 from io_agent.runner.basic import run_agent
-from io_agent.utils import save_experiment
+from io_agent.utils import save_experiment, load_experiment
 
 
 @dataclass
 class IterativeIOArgs():
+    work_dir: str
     learning_rate: float = 1e-2
     lr_exp_decay: float = 0.98
     n_batch: int = 128
@@ -29,21 +28,31 @@ class IterativeIOArgs():
 
 
 def run_iterative_io(args: IterativeIOArgs,
-                     feature_handler: FeatureHandler,
-                     augmented_dataset: List[AugmentedTransition],
                      env: Plant,
-                     rng: np.random.Generator,
+                     seed: int,
                      trial_seeds: List[int],
                      name: str,
-                     save_dir: str,
-                     log_dir: str,
+                     save_dir: str = "models",
+                     log_dir: str = "logs",
+                     data_path: str = "dataset/rich_augmented",
                      device: str = "cpu",
                      verbose: bool = True,
                      ):
+
+    timestamp = datetime.datetime.now().strftime("%y-%m%d-%H%M%S")
+    save_dir = os.path.join(args.work_dir, save_dir, f"{timestamp}")
+    log_dir = os.path.join(args.work_dir, log_dir, f"{timestamp}")
+
     os.makedirs(save_dir, exist_ok=True)
     os.makedirs(log_dir, exist_ok=True)
-    seed = rng.integers(0, 2**30).item()
-    torch.manual_seed(seed)
+
+    walker_data = load_experiment(os.path.join(args.work_dir, data_path))
+    augmented_dataset = walker_data["augmented_dataset"]
+    feature_handler = walker_data["feature_handler"]
+
+    rng = np.random.default_rng(seed)
+    model_seed = rng.integers(0, 2**30).item()
+    torch.manual_seed(model_seed)
     iterative_io_agent = IterativeIOController(
         constraints=feature_handler.params.constraints,
         feature_handler=feature_handler,
@@ -61,6 +70,15 @@ def run_iterative_io(args: IterativeIOArgs,
     trainer = iterative_io_agent.train(augmented_dataset[:int(args.data_size)],
                                        batch_size=args.n_batch,
                                        rng=rng)
+    with open(os.path.join(log_dir, f"{name}_args.json"), "w") as fobj:
+        json.dump({
+            "args": asdict(args),
+            "name": name,
+            "seeds": {
+                "trials": [value.item() for value in trial_seeds],
+                "model": model_seed,
+                "train": seed.item()}
+        }, fobj)
     with tqdm(total=args.eval_epochs[-1]) as pbar:
         for eval_break_epoch in args.eval_epochs:
             avg_epoch_loss = None
@@ -87,20 +105,21 @@ def run_iterative_io(args: IterativeIOArgs,
                         env_reset_rng=np.random.default_rng(_seed)
                     )()
                 )
-            iterative_io_costs = [np.sum([tran.cost for tran in trajectory])
-                                  for trajectory in iterative_io_trajectories]
-            costs[eval_break_epoch] = iterative_io_costs
-            last_median_eval_score = env.env.get_normalized_score(np.median(iterative_io_costs)) * 100
-            last_mean_eval_score = env.env.get_normalized_score(np.mean(iterative_io_costs)) * 100
-            last_std_eval_score = env.env.get_normalized_score(np.std(iterative_io_costs)) * 100
+            iterative_io_rewards = [np.sum([tran.cost for tran in trajectory])
+                                    for trajectory in iterative_io_trajectories]
+            costs[eval_break_epoch] = iterative_io_rewards
+            last_median_eval_score = env.env.get_normalized_score(
+                np.median(iterative_io_rewards)) * 100
+            last_mean_eval_score = env.env.get_normalized_score(np.mean(iterative_io_rewards)) * 100
+            last_std_eval_score = env.env.get_normalized_score(np.std(iterative_io_rewards)) * 100
             torch.save(iterative_io_agent, os.path.join(
-                save_dir, f"model_{name}_{eval_break_epoch}_{seed}"))
+                save_dir, f"model_{name}_{eval_break_epoch}_{model_seed}"))
             if verbose:
                 print(f"median score: {last_median_eval_score:.3f}%",
                       f"average score: {last_mean_eval_score:.3f}%",
                       f"std score: {last_std_eval_score:.3f}%")
             with open(os.path.join(log_dir, name + f"_logs_{eval_break_epoch}.json"), "a") as fobj:
-                json.dump({"costs": iterative_io_costs,
+                json.dump({"rewards": iterative_io_rewards,
                            "Median score": f"{last_median_eval_score:.3f}%",
                            "Average score": f"{last_mean_eval_score:.3f}%",
                            "Std score": f"{last_std_eval_score:.3f}%",
