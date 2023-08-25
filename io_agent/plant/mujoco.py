@@ -7,6 +7,7 @@ from io_agent.plant.base import (Plant,
                                  NominalLinearEnvParams,
                                  LinearConstraints,
                                  LinearConstraint)
+from io_agent.utils import FeatureHandler
 
 
 class MuJoCoEnv(Plant):
@@ -69,10 +70,10 @@ class MuJoCoEnv(Plant):
              ) -> Tuple[Union[np.ndarray, float, bool, Optional[Dict[str, Any]]]]:
         self._state, reward, done, info = self.env.step(action)
         return self._state, reward, done, False, info
-    
+
     def render(self, *args, **kwargs) -> Any:
         return self.env.render(*args, **kwargs)
-    
+
 
 class Walker2dEnv(MuJoCoEnv):
 
@@ -80,11 +81,13 @@ class Walker2dEnv(MuJoCoEnv):
         env = gym.make("walker2d-medium-v2")
         super().__init__(env)
 
+
 class HalfCheetahEnv(MuJoCoEnv):
 
     def __init__(self) -> None:
         env = gym.make("halfcheetah-medium-v2")
         super().__init__(env)
+
 
 class HopperEnv(MuJoCoEnv):
 
@@ -108,3 +111,33 @@ class OldSchoolWrapper(gym.Wrapper):
 
     def get_normalized_score(self, score: float) -> float:
         return self.env.env.env.get_normalized_score(score)
+
+
+class AugmentedStateWrapper(gym.Wrapper):
+
+    def __init__(self, env: gym.Env, feature_handler: FeatureHandler, *args, **kwargs):
+        self.feature_handler = feature_handler
+        self._history = None
+        self._past_state = None
+        super().__init__(env, *args, **kwargs)
+        self.observation_space = gym.spaces.Box(
+            -np.inf, np.inf, shape=(self.feature_handler.aug_state_size,))
+
+    def reset(self, *args, **kwargs):
+        _state, *rest = self.env.reset(*args, **kwargs)
+        self._history = self.feature_handler.reset_history()
+        self._past_state = _state
+        return self.feature_handler.augment_state(_state, self._history), *rest
+
+    def step(self,
+             action: np.ndarray
+             ) -> Tuple[Union[np.ndarray, float, bool, Optional[Dict[str, Any]]]]:
+        _next_state, *rest = self.env.step(action)
+        self._history = self.feature_handler.update_history(
+            state=self._past_state,
+            action=action,
+            next_state=_next_state,
+            history=self._history)
+        self._past_state = _next_state.copy()
+        next_state = self.feature_handler.augment_state(_next_state, self._history)
+        return next_state, *rest

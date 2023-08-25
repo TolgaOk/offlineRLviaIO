@@ -27,6 +27,7 @@ class IterativeIOController(torch.nn.Module, IOController):
                  ):
         super().__init__()
         self.learning_rate = learning_rate
+        self.lr_exp_decay = lr_exp_decay
         IOController.__init__(
             self,
             params=NominalLinearEnvParams(
@@ -60,6 +61,25 @@ class IterativeIOController(torch.nn.Module, IOController):
             raise NotImplementedError("Only rectangular action constraints are supported!")
         self.to(device)
 
+    def get_states(self) -> Dict[str, Any]:
+        return dict(
+            parameters={key: param.cpu() for key, param in self.state_dict().items()},
+            constraints=self.params.constraints,
+            feature_handler=self.feature_handler,
+            include_constraints=self.include_constraints,
+            action_constraints_flag=self.action_constraints_flag,
+            state_constraints_flag=self.state_constraints_flag,
+            learning_rate=self.learning_rate,
+            lr_exp_decay=self.lr_exp_decay,
+            device=self.device,
+        )
+
+    @staticmethod
+    def load_states(states: Dict[str, Any]) -> "IterativeIOController":
+        parameters = states.pop("parameters")
+        controller = IterativeIOController(**states)
+        controller.load_state_dict(parameters)
+        return controller
 
     def to_torch(self, array: np.ndarray) -> torch.Tensor:
         return torch.from_numpy(array).float().to(self.device)
@@ -102,7 +122,7 @@ class IterativeIOController(torch.nn.Module, IOController):
             self.to_torch(self.const_vector),
             torch.Tensor().to(self.device),
             torch.Tensor().to(self.device))
-    
+
     def compute(self,
                 state: np.ndarray,
                 reference: np.ndarray,
@@ -158,4 +178,3 @@ class IterativeIOController(torch.nn.Module, IOController):
             self._q_theta_uu = self.th_theta_uu.cpu().detach().numpy()
             self._q_theta_su = self.th_theta_su.cpu().detach().numpy()
             yield np.mean(within_epoch_losses), within_epoch_losses
-
