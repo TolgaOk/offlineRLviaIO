@@ -1,5 +1,6 @@
-from typing import List, Tuple
+from typing import List, Tuple, Dict
 from functools import partial
+from copy import deepcopy
 import datetime
 import os
 from dataclasses import dataclass, asdict
@@ -7,19 +8,28 @@ import json
 from tqdm.notebook import tqdm
 import numpy as np
 import torch
+from stable_baselines3.common.vec_env import SubprocVecEnv
 
 from io_agent.plant.base import Plant
-from io_agent.plant.mujoco import MuJoCoEnv
+from io_agent.plant.mujoco import MuJoCoEnv, Walker2dEnv, HopperEnv, HalfCheetahEnv, AugmentedStateWrapper
 from io_agent.evaluator import Transition
 from io_agent.control.io import FeatureHandler, AugmentDataset
 from io_agent.control.iterative_io import IterativeIOController
 from io_agent.runner.basic import run_agent
-from io_agent.utils import save_experiment, load_experiment
+from io_agent.utils import save_experiment, load_experiment, parallelize
+
+
+registered_envs = dict(
+    walker=Walker2dEnv,
+    hopper=HopperEnv,
+    cheetah=HalfCheetahEnv
+)
 
 
 @dataclass
 class IterativeIOArgs():
     work_dir: str
+    env_name: str
     learning_rate: float = 1e-2
     lr_exp_decay: float = 0.98
     n_batch: int = 128
@@ -28,7 +38,6 @@ class IterativeIOArgs():
 
 
 def run_iterative_io(args: IterativeIOArgs,
-                     env: Plant,
                      seed: int,
                      trial_seeds: List[int],
                      name: str,
@@ -45,6 +54,8 @@ def run_iterative_io(args: IterativeIOArgs,
 
     os.makedirs(save_dir, exist_ok=True)
     os.makedirs(log_dir, exist_ok=True)
+
+    env = registered_envs[args.env_name]()
 
     walker_data = load_experiment(os.path.join(args.work_dir, data_path))
     augmented_dataset = walker_data["augmented_dataset"]
@@ -66,7 +77,7 @@ def run_iterative_io(args: IterativeIOArgs,
     epoch_losses = []
     step_losses = []
     costs = {}
-    last_median_eval_score = None
+    last_median_eval_score = 0
     trainer = iterative_io_agent.train(augmented_dataset[:int(args.data_size)],
                                        batch_size=args.n_batch,
                                        rng=rng)
@@ -105,6 +116,7 @@ def run_iterative_io(args: IterativeIOArgs,
                         env_reset_rng=np.random.default_rng(_seed)
                     )()
                 )
+
             iterative_io_rewards = [np.sum([tran.cost for tran in trajectory])
                                     for trajectory in iterative_io_trajectories]
             costs[eval_break_epoch] = iterative_io_rewards
@@ -127,6 +139,24 @@ def run_iterative_io(args: IterativeIOArgs,
                            "LR": iterative_io_agent.scheduler.get_last_lr()[-1]
                            }, fobj)
     return costs, epoch_losses, step_losses, iterative_io_agent
+
+# Currently not being used!
+
+
+def evaluate_iterative_io(
+        controller_states: Dict[str, torch.Tensor],
+        env_name: str,
+        trial_seed) -> List[Transition]:
+    env = registered_envs[env_name]()
+    parameters = controller_states.pop("parameters")
+    controller = IterativeIOController(**controller_states)
+    controller.load_state_dict(parameters)
+    return run_agent(
+        agent=controller,
+        plant=env,
+        use_foresight=False,
+        bias_aware=False,
+        env_reset_rng=np.random.default_rng(trial_seed))
 
 
 def augment_mujoco_dataset(
