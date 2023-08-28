@@ -92,7 +92,7 @@ class IterativeIOController(torch.nn.Module, IOController):
 
         self.th_theta_uu = torch.nn.Parameter(init_psd_matrix)
         self.th_theta_su = torch.nn.Parameter(torch.randn(self.aug_state_size, self.action_size))
-        return torch.optim.Adam(self.parameters(), lr=self.learning_rate)
+        return torch.optim.SGD(self.parameters(), lr=self.learning_rate)
 
     def project_theta_uu(self):
         eig_vals, eig_vecs = torch.linalg.eigh(self.th_theta_uu.data)
