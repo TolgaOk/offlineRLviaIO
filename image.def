@@ -1,26 +1,10 @@
 BootStrap: docker
-From: continuumio/miniconda3
-
-%arguments
-    PYTHON_VERSION=3.10
+From: tolgaok/jax-cuda-mujoco
 
 %files
    ./ {{ WORKDIR }}
 
 %post
-   apt-get -y update
-
-   wget 'https://code.visualstudio.com/sha/download?build=stable&os=cli-alpine-x64' -O vscode_cli.tar.gz
-   tar -xf vscode_cli.tar.gz
-
-   conda create -n main python={{ PYTHON_VERSION }}
-   conda init bash
-   . ~/.bashrc
-   conda activate main
-
-   conda install -n main ipykernel --update-deps --force-reinstall
-   conda install -c anaconda jupyter
-
    cd {{ WORKDIR }}
    pip install -r ./requirements.txt
    pip install -e .

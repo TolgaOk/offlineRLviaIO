@@ -9,10 +9,10 @@ case "$1" in
             --cpus-per-task=4  \
             --mem-per-cpu=2GB  \
             --pty \
-            apptainer exec --bind $PWD image.sif /code tunnel --accept-server-license-terms 
+            apptainer exec --writable-tmpfs --nv --bind $PWD image.sif /code tunnel --accept-server-license-terms 
     ;;
     "--run")
-        apptainer exec --bind $PWD image.sif /code tunnel --accept-server-license-terms
+        apptainer exec --writable-tmpfs --nv--bind $PWD image.sif /code tunnel --accept-server-license-terms
     ;;
     "--build")
         apptainer build --build-arg WORKDIR=$PWD image.sif image.def
