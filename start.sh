@@ -1,13 +1,13 @@
 #/bin/bash
 case "$1" in 
     "--slurm")
-        srun 
+        srun \
             --job-name="sl2rl_job"  \
-            --partition=compute  \
-            --time=01:00:00  \
+            --partition=gpu  \
+            --time=5:00:00  \
             --ntasks=1  \
-            --cpus-per-task=4  \
-            --mem-per-cpu=2GB  \
+            --cpus-per-task=8  \
+            --mem-per-cpu=4GB  \
             --pty \
             apptainer exec --writable-tmpfs --nv --bind $PWD image.sif /code tunnel --accept-server-license-terms 
     ;;
