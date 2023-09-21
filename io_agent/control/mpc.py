@@ -80,6 +80,18 @@ class MPC():
     def reset(self) -> None:
         pass
 
+    def cost_function(self,
+                      params: NominalLinearEnvParams,
+                      step: int,
+                      reference: Any,
+                      state: Any,
+                      action: Any,
+                      next_state: Any) -> Any:
+        state_cost = (params.costs.state if step < self.horizon - 1
+                      else params.costs.final)
+        return (cp.quad_form((params.matrices.c_matrix @ next_state - reference), state_cost)
+                + cp.quad_form(action, params.costs.action))
+
     def prepare_optimizer(self, params: NominalLinearEnvParams) -> Optimizer:
         """ Prepare a parametric optimization problem for the mpc agent
 
@@ -101,13 +113,20 @@ class MPC():
         for step in range(self.horizon):
             action_var = cp.Variable((self.action_size), name=f"mu_{step+1}")
             action_list.append(action_var)
-            state = (params.matrices.a_matrix @ (state) +
-                     params.matrices.b_matrix @ action_var +
-                     params.matrices.e_matrix @ w_par[:, step])
-            state_cost = (params.costs.state if step < self.horizon - 1
-                          else params.costs.final)
-            cost = cost + cp.quad_form((params.matrices.c_matrix @ state - r_par[:, step]), state_cost)
-            cost = cost + cp.quad_form(action_var, params.costs.action)
+            next_state = (params.matrices.a_matrix @ (state) +
+                          params.matrices.b_matrix @ action_var +
+                          params.matrices.e_matrix @ w_par[:, step])
+            cost = cost + self.cost_function(
+                params=params,
+                step=step,
+                reference=r_par[:, step],
+                state=state,
+                action=action_var,
+                next_state=next_state)
+            # state_cost = (params.costs.state if step < self.horizon - 1
+            #               else params.costs.final)
+            # cost = cost + cp.quad_form((params.matrices.c_matrix @ state - r_par[:, step]), state_cost)
+            # cost = cost + cp.quad_form(action_var, params.costs.action)
 
             if params.constraints.state is not None:
                 constraints += [params.constraints.state.matrix @ state <=
@@ -128,3 +147,20 @@ class MPC():
             variables={"actions": cp.hstack(
                 [cp.reshape(action, (self.action_size, 1)) for action in action_list])}
         )
+
+
+class MuJoCoMPC(MPC):
+
+    dt: float = 0.008
+    alpha: float = 1e-3
+
+    def cost_function(self,
+                      params: NominalLinearEnvParams,
+                      step: int,
+                      reference: Any,
+                      state: Any,
+                      action: Any,
+                      next_state: Any) -> Any:
+        return self.alpha * cp.quad_form(action, np.eye(self.action_size)) \
+            - (next_state[0] - state[0]) / self.dt \
+            - 1
