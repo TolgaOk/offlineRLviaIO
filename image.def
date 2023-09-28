@@ -1,0 +1,32 @@
+BootStrap: docker
+From: tolgaok/jax-cuda-mujoco
+
+%files
+    ./ {{ WORKDIR }}
+
+%post
+    cd {{ WORKDIR }}
+    pip install -r ./requirements.txt
+
+    cd /root
+    git clone https://github.com/utiasDSL/safe-control-gym.git
+    cd /root/safe-control-gym
+    conda install -c anaconda gmp
+    pip install -e .
+
+    cd /root
+    git clone https://github.com/yihaosun1124/OfflineRL-Kit.git
+    cd /root/OfflineRL-Kit
+    python setup.py install
+
+    pip install stable-baselines3
+    pip install git+https://github.com/Farama-Foundation/d4rl@master#egg=d4rl
+    conda install -c conda-forge scikit-learn=1.2.1 scipy=1.10.1
+    pip install qpth
+    pip install geotorch
+
+    cd {{ WORKDIR }}
+    pip install -e .
+
+%labels
+    Author Anonymous
