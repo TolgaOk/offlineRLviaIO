@@ -11,6 +11,10 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
+Alternatively, you can use [apptainer](https://apptainer.org/) to build an image using the ```image.def``` file. Run ```start.sh --build``` to build a apptainer image and run ```start.sh --run``` to start a container running vs-code.
+
+### Additional Installations
+
 This repository contains several experiments that contains comparison between IO agent and [CQL (Conservative Q-Learning)](https://arxiv.org/abs/2006.04779). Additionally, it includes comparison with MPC agents and [PPO (Proximal Policy Optimization) algorithm](https://arxiv.org/abs/1707.06347). These experiments are run on Quadrotor environment provided in [safe-control-gym](https://arxiv.org/abs/2108.06266). In order to run these experiments, an additional installation process is required.
 
 These steps can be done by following the installation process of the listed repositories below.
@@ -21,8 +25,8 @@ These steps can be done by following the installation process of the listed repo
 - - -
 ## Examples
 
-You can run the example notebook:
+You can find the examples under the ```examples``` folder:
 
-- `examples/fighter/*` : experiments of Sections 4
+- `examples/fighter.ipynb` : experiments of Sections 4
 
-The experiment directory contains the jupyter-notebook for the corresponding experiment. You can visualize the results within the notebooks.
+The experiment directory contains jupyter-notebooks for the corresponding experiment. You can visualize the results within the notebooks.
