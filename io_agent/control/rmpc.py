@@ -79,6 +79,26 @@ class RobustMPC(MPC):
                 np.linalg.matrix_power(params.matrices.a_matrix, t) @ params.matrices.e_matrix)
         return full_a, full_b, full_e, full_c, full_p
 
+    def _full_state_cost_matrix(self, params: NominalLinearEnvParams) -> np.ndarray:
+        return np.block([
+            [np.kron(np.eye(self.horizon-1), params.costs.state),
+             np.zeros((self.output_size * (self.horizon - 1), self.output_size))],
+            [np.zeros((self.output_size, self.output_size * (self.horizon - 1))),
+             params.costs.final]
+        ])
+    
+    def _full_action_cost_matrix(self, params: NominalLinearEnvParams) -> np.ndarray:
+        return np.kron(np.eye(self.horizon), params.costs.action)
+
+    def _state_cost_quad_form(self, vector: Any, matrix: Any, is_ref_signal: bool = False) -> Any:
+        return cp.quad_form(vector, matrix)
+
+    def _augment_x(self, vector: Any) -> Any:
+        return vector
+
+    def _augment_r(self, vector: Any) -> Any:
+        return vector
+
     def prepare_optimizer(self, params: NominalLinearEnvParams) -> Optimizer:
         """ Prepare a parametric optimization problem for the robust mpc agent
 
@@ -93,29 +113,26 @@ class RobustMPC(MPC):
         gamma_2 = cp.Variable(1)
         lambda_var = cp.Variable(1)
 
-        x_par = cp.Parameter(self.state_size)
-        r_par = cp.Parameter((self.output_size, self.horizon))
+        x_par_orig = cp.Parameter(self.state_size)
+        x_par = self._augment_x(x_par_orig)
+        r_par_orig = cp.Parameter((self.output_size, self.horizon))
+        r_par = self._augment_r(r_par_orig.flatten())
         w_par = cp.Parameter((self.noise_size, self.horizon))
 
         full_a, full_b, full_e, full_c, full_p = self._full_matrices(params)
 
-        full_action_cost = np.kron(np.eye(self.horizon), params.costs.action)
-        full_state_cost = np.block([
-            [np.kron(np.eye(self.horizon-1), params.costs.state),
-             np.zeros((self.output_size * (self.horizon - 1), self.output_size))],
-            [np.zeros((self.output_size, self.output_size * (self.horizon - 1))),
-             params.costs.final]
-        ])
+        full_action_cost = self._full_action_cost_matrix(params)
+        full_state_cost = self._full_state_cost_matrix(params)
 
         # First LMI constraint
         lmi_a = full_e.T @ full_c.T @ full_state_cost @ full_c @ full_e - lambda_var * full_p
         lmi_b = cp.reshape(
             full_e.T @ full_c.T @ full_state_cost
-            @ (full_c @ (full_a @ x_par + full_b @ full_actions.flatten()) - r_par.flatten())
+            @ (full_c @ (full_a @ x_par + full_b @ full_actions.flatten()) - r_par)
             + lambda_var * full_p @ w_par.flatten(),
             [self.noise_size * self.horizon, 1])
         lmi_c = cp.reshape(
-            (cp.quad_form(r_par.flatten(), full_state_cost)
+            (self._state_cost_quad_form(r_par, full_state_cost, is_ref_signal=True)
              - lambda_var * (cp.quad_form(w_par.flatten(), full_p) - self.rho**2) - gamma_1),
             [1, 1])
         lmi_constraint_1 = cp.bmat([
@@ -131,12 +148,12 @@ class RobustMPC(MPC):
             [cost_matrix.shape[0], 1]
         )
         lmi_c = cp.reshape(
-            (cp.quad_form(full_a @ x_par, full_c.T @ full_state_cost @ full_c)
+            (self._state_cost_quad_form(full_a @ x_par, full_c.T @ full_state_cost @ full_c, is_ref_signal=False)
              - 2 * cp.sum(cp.multiply(
-                 r_par.flatten(),
+                 r_par,
                  (full_state_cost @ full_c @ full_a @ x_par)))
              + 2 * cp.sum(cp.multiply(
-                 (full_b.T @ full_c.T @ full_state_cost @ (full_c @ full_a @ x_par - r_par.flatten())),
+                 (full_b.T @ full_c.T @ full_state_cost @ (full_c @ full_a @ x_par - r_par)),
                  full_actions.flatten()))
              - gamma_2),
             [1, 1]
@@ -181,15 +198,79 @@ class RobustMPC(MPC):
                 objective += self.softening_penalty * cp.norm(slack, 2)**2
             else:
                 slack = np.zeros(full_state_constraint_vector.shape)
-            constraints.append(full_state_constraint_matrix @ (full_a @ x_par + full_b @
+            constraints.append(full_state_constraint_matrix @ (full_a @ x_par_orig + full_b @
                                                                full_actions.flatten()) <= full_state_constraint_vector - g_bar + slack)
 
         prob = cp.Problem(cp.Minimize(objective), constraints)
         return Optimizer(
             problem=prob,
-            parameters={"initial_state": x_par,
-                        "reference_sequence": r_par,
+            parameters={"initial_state": x_par_orig,
+                        "reference_sequence": r_par_orig,
                         "state_disturbance": w_par},
             variables={"actions": full_actions,
                        "lambda": lambda_var}
         )
+
+
+class MuJoCoRobustMPC(RobustMPC):
+
+    dt: float = 0.008
+    alpha: float = 1e-3
+
+    def _full_matrices(self, params: NominalLinearEnvParams) -> Tuple[np.ndarray]:
+        size = (self.state_size + 1) * self.horizon - 1
+        full_a, full_b, full_e, full_c, full_p = super()._full_matrices(params)
+        full_a = np.concatenate([full_a, np.zeros((self.horizon - 1, self.state_size))], axis=0)
+        full_a = np.concatenate(
+            [full_a, np.zeros((size , 1))], axis=1)
+        full_a[-(self.horizon - 1):, -1] = 1.0
+
+        full_b = np.concatenate(
+            [full_b, np.zeros((self.horizon - 1, self.action_size * self.horizon))], axis=0)
+        full_e = np.concatenate(
+            [full_e, np.zeros((self.horizon - 1, self.noise_size * self.horizon))], axis=0)
+        _full_c = np.zeros((size, size))
+        _full_c[:size - self.horizon + 1, :size - self.horizon + 1] = full_c
+        _full_c[-(self.horizon - 1):, -(self.horizon - 1):] = np.eye(self.horizon - 1)
+
+        return full_a, full_b, full_e, _full_c, full_p
+
+    def _full_state_cost_matrix(self, params: NominalLinearEnvParams) -> np.ndarray:
+        size = (self.horizon) * (self.state_size + 1) - 1
+        cost_matrix = np.zeros((size, size))
+        cost_matrix[-(self.horizon - 1):, -(self.horizon - 1):] = np.eye((self.horizon - 1)) / 2
+        for index in range(self.horizon - 1):
+            cost_matrix[-(self.horizon - 1 - index), index * self.state_size] = -0.5 / self.dt
+            cost_matrix[-(self.horizon - 1 - index), (index + 1) * self.state_size] = 0.5 / self.dt
+        return -(cost_matrix + cost_matrix.T)  # Make symmetric
+    
+    def _full_action_cost_matrix(self, params: NominalLinearEnvParams, eta: float = 1e-5) -> np.ndarray:
+        matrix = np.eye(self.horizon * self.action_size) * self.alpha
+        matrix[-self.action_size:, -self.action_size:] *= eta
+        return matrix
+
+    def _state_cost_quad_form(self, vector: Any, matrix: Any, is_ref_signal: bool = False) -> Any:
+        if is_ref_signal:  # Assuming reference is zero in MuJoCo
+            return 0
+        # u: upper, l: lower, ul: upper-left, lr: lower-right
+        u_matrix, l_matrix = np.split(matrix, (self.horizon * self.state_size,), axis=0)
+        _, ur_matrix = np.split(u_matrix, (self.horizon * self.state_size,), axis=1)
+        ll_matrix, lr_matrix = np.split(l_matrix, (self.horizon * self.state_size,), axis=1)
+
+        right_mul = ur_matrix @ np.ones(self.horizon - 1)
+        left_mul = np.ones(self.horizon - 1) @ ll_matrix
+
+        states = vector[:(self.horizon * self.state_size)]
+        ones = vector[(self.horizon * self.state_size):]
+        return cp.sum(cp.multiply(ones, (lr_matrix @ ones))) + cp.sum(cp.multiply(states, (right_mul + left_mul)))
+
+    def _augment_x(self, vector: Any) -> Any:
+        """ Augment the initial state with "1".
+
+        Returns:
+            Any: Augmented initial state parameter
+        """
+        return cp.hstack([vector, np.ones((1,))])
+
+    def _augment_r(self, vector: Any) -> Any:
+        return cp.hstack([vector, np.zeros([self.horizon - 1])])

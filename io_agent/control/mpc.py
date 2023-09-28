@@ -123,10 +123,6 @@ class MPC():
                 state=state,
                 action=action_var,
                 next_state=next_state)
-            # state_cost = (params.costs.state if step < self.horizon - 1
-            #               else params.costs.final)
-            # cost = cost + cp.quad_form((params.matrices.c_matrix @ state - r_par[:, step]), state_cost)
-            # cost = cost + cp.quad_form(action_var, params.costs.action)
 
             if params.constraints.state is not None:
                 constraints += [params.constraints.state.matrix @ state <=

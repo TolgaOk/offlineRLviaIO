@@ -3,7 +3,9 @@ import numpy as np
 from scipy.linalg import sqrtm
 import cvxpy as cp
 import gymnasium as gym
+from functools import partial
 from gymnasium import spaces
+from tqdm.notebook import tqdm
 from dataclasses import dataclass, asdict
 from collections import deque
 
@@ -285,10 +287,6 @@ class IOController():
         objective = cp.Minimize(objective)
         problem = cp.Problem(objective, constraints)
 
-        parameters = {
-            "states": states,
-            "actions": actions,
-        }
         if self.include_constraints:
             parameters["constraint_matrices"] = constraint_matrices
             parameters["constraint_vector"] = constraint_vector
@@ -343,7 +341,7 @@ class AugmentDataset():
         )
         return action
 
-    def __call__(self, trajectories: List[List[Transition]]) -> List[AugmentedTransition]:
+    def __call__(self, trajectories: List[List[Transition]], verbose: bool = False) -> List[AugmentedTransition]:
         """ Prepare the given trajectories by augmenting the states and calculating
             the expert action.
 
@@ -353,8 +351,11 @@ class AugmentDataset():
         Returns:
             List[AugmentedTransition]: Flatten list of augmented transitions
         """
+
+        loading_bar = (partial(tqdm) if verbose else lambda x: x)
+
         all_transitions = []
-        for traj_index, trajectory in enumerate(trajectories):
+        for traj_index, trajectory in loading_bar(enumerate(trajectories)):
             history = self.feature_handler.reset_history()
             noise_queue = deque(maxlen=self.horizon)
             ref_queue = deque(maxlen=self.horizon)
@@ -386,8 +387,8 @@ class AugmentDataset():
                         )
                     )
                     ref_queue.append(transition.reference
-                                    if transition.reference is not None
-                                    else np.zeros((self.feature_handler.output_size,)))
+                                     if transition.reference is not None
+                                     else np.zeros((self.feature_handler.output_size,)))
                 if tran_index >= self.horizon:
                     hindsighted_tran = trajectory[tran_index - self.horizon]
                     history = self.feature_handler.update_history(

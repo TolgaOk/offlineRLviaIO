@@ -1,4 +1,4 @@
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, Optional, Any
 from functools import partial
 from copy import deepcopy
 import datetime
@@ -17,6 +17,7 @@ from io_agent.control.io import FeatureHandler, AugmentDataset
 from io_agent.control.iterative_io import IterativeIOController
 from io_agent.runner.basic import run_agent
 from io_agent.utils import save_experiment, load_experiment, parallelize
+from io_agent.control.mpc import MPC
 
 
 registered_envs = dict(
@@ -45,6 +46,7 @@ def run_iterative_io(args: IterativeIOArgs,
                      log_dir: str = "logs",
                      data_path: str = "dataset/rich_augmented",
                      device: str = "cpu",
+                     env_kwargs: Dict[str, Any] = {},
                      verbose: bool = True,
                      ):
 
@@ -55,7 +57,7 @@ def run_iterative_io(args: IterativeIOArgs,
     os.makedirs(save_dir, exist_ok=True)
     os.makedirs(log_dir, exist_ok=True)
 
-    env = registered_envs[args.env_name]()
+    env = registered_envs[args.env_name](**env_kwargs)
 
     walker_data = load_experiment(os.path.join(args.work_dir, data_path))
     augmented_dataset = walker_data["augmented_dataset"]
@@ -163,13 +165,15 @@ def augment_mujoco_dataset(
         env: MuJoCoEnv,
         save_dir: str,
         file_name: str,
+        dataset: Optional[Any] = None,
+        expert_agent: Optional[MPC] = None,
         n_past: int = 4,
         use_co_product: bool = True,
         add_bias: bool = True,
         use_sinusoidal: bool = True,
         use_action_regressor: bool = True,
         use_state_regressor: bool = True) -> None:
-    dataset = env.env.get_dataset()
+    dataset = dataset or env.env.get_dataset()
     feature_handler = FeatureHandler(
         params=env.nominal_model(),
         n_past=n_past,
@@ -182,19 +186,20 @@ def augment_mujoco_dataset(
         use_state_regressor=use_state_regressor,
         state_high=dataset["observations"].max(axis=0),
         state_low=dataset["observations"].min(axis=0),
-        noise_size=0,
+        noise_size=env.observation_space.shape[0],
         state_size=env.observation_space.shape[0],
         action_size=env.action_space.shape[0],
         output_size=env.observation_space.shape[0],
     )
     augmenter = AugmentDataset(
-        expert_agent=None,
+        expert_agent=expert_agent,
         feature_handler=feature_handler
     )
 
     trajectories = []
 
     states = dataset["observations"]
+    next_states = dataset["next_observations"]
     actions = dataset["actions"]
 
     dones = np.argwhere(np.logical_or(dataset["terminals"], dataset["timeouts"]))
@@ -208,7 +213,7 @@ def augment_mujoco_dataset(
                 Transition(
                     state=states[index],
                     action=actions[index],
-                    next_state=None,
+                    next_state=next_states[index],
                     cost=None,
                     termination=None,
                     truncation=None,
@@ -225,7 +230,7 @@ def augment_mujoco_dataset(
     traj_lengths = (dones + 1).ravel() - start_indices
     assert np.all([len(traj) == traj_lengths[index] for index, traj in enumerate(trajectories)])
 
-    augmented_trajectories = augmenter(trajectories)
+    augmented_trajectories = augmenter(trajectories, True)
     save_experiment(
         values={
             "augmented_dataset": augmented_trajectories,
