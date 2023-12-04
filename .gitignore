@@ -8,3 +8,5 @@ local/
 *_data
 log
 *.sif
+*data
+*logs
