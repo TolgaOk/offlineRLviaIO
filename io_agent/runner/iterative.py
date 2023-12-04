@@ -141,8 +141,6 @@ def run_iterative_io(args: IterativeIOArgs,
     return costs, epoch_losses, step_losses, iterative_io_agent
 
 # Currently not being used!
-
-
 def evaluate_iterative_io(
         controller_states: Dict[str, torch.Tensor],
         env_name: str,

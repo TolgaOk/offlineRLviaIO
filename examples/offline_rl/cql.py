@@ -45,7 +45,7 @@ class CqlArgs():
     device: Optional[str] = "cuda" if torch.cuda.is_available() else "cpu"
 
 
-def cql_trainer(args: CqlArgs, env: gym.Env, logger: Logger) -> MFPolicyTrainer:
+def cql_trainer(args: CqlArgs, env: gym.Env, logger: Logger) -> None:
 
     actor_backbone = MLP(input_dim=np.prod(
         args.obs_shape), hidden_dims=args.hidden_dims)
@@ -121,4 +121,4 @@ def cql_trainer(args: CqlArgs, env: gym.Env, logger: Logger) -> MFPolicyTrainer:
         batch_size=args.batch_size,
         eval_episodes=args.eval_episodes
     )
-    return policy_trainer
+    policy_trainer.train()

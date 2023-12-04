@@ -173,8 +173,9 @@ class IterativeIOController(torch.nn.Module, IOController):
                 self.train_optimizer.step()
                 self.project_theta_uu()
                 within_epoch_losses.append(loss.item())
+                yield loss.item()
 
             self.scheduler.step()
             self._q_theta_uu = self.th_theta_uu.cpu().detach().numpy()
             self._q_theta_su = self.th_theta_su.cpu().detach().numpy()
-            yield np.mean(within_epoch_losses), within_epoch_losses
+            # yield np.mean(within_epoch_losses), within_epoch_losses

@@ -14,6 +14,7 @@ from offlinerlkit.utils.logger import Logger
 
 from cql import cql_trainer, CqlArgs
 from iql import iql_trainer, IqlArgs
+from iio import iio_trainer, IIOArgs
 
 from io_agent.plant.mujoco import Walker2dEnv, HalfCheetahEnv, HopperEnv
 
@@ -21,6 +22,7 @@ from io_agent.plant.mujoco import Walker2dEnv, HalfCheetahEnv, HopperEnv
 algorithms = dict(
     cql=dict(trainer=cql_trainer, args=CqlArgs),
     iql=dict(trainer=iql_trainer, args=IqlArgs),
+    io=dict(trainer=iio_trainer, args=IIOArgs),
 )
 
 
@@ -56,7 +58,7 @@ def train_offline_rl(algo_name: str,
     # env.seed(args.seed)
 
     timestamp = datetime.datetime.now().strftime("%y-%m%d-%H%M%S")
-    log_dir = f"./data/{algo_name}/{env_name}/size_{args.datasize}/seed_{seed}/{timestamp}"
+    log_dir = f"./logs/{algo_name}/{env_name}/size_{args.datasize}/seed_{seed}/{timestamp}"
     os.makedirs(log_dir, exist_ok=True)
 
     output_config = {
@@ -67,7 +69,7 @@ def train_offline_rl(algo_name: str,
     logger = Logger(log_dir, output_config)
     logger.log_hyperparameters(vars(args))
 
-    alg_info["trainer"](args, env, logger).train()
+    alg_info["trainer"](args, env, logger)
 
 
 if __name__ == "__main__":

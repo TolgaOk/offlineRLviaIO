@@ -75,7 +75,7 @@ def normalize_rewards(dataset):
     return dataset
 
 
-def iql_trainer(args: IqlArgs, env: gym.Env, logger: Logger) -> MFPolicyTrainer:
+def iql_trainer(args: IqlArgs, env: gym.Env, logger: Logger) -> None:
 
     # create policy model
     actor_backbone = MLP(input_dim=np.prod(
@@ -170,4 +170,4 @@ def iql_trainer(args: IqlArgs, env: gym.Env, logger: Logger) -> MFPolicyTrainer:
         eval_episodes=args.eval_episodes,
         lr_scheduler=lr_scheduler
     )
-    return policy_trainer
+    policy_trainer.train()
