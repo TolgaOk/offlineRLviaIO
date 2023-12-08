@@ -30,7 +30,8 @@ def train_offline_rl(algo_name: str,
                      env_name: str,
                      seed: int,
                      device: str,
-                     datasize: int
+                     datasize: int,
+                     exp_name: str
                      ) -> None:
 
     if env_name == "walker":
@@ -58,7 +59,8 @@ def train_offline_rl(algo_name: str,
     # env.seed(args.seed)
 
     timestamp = datetime.datetime.now().strftime("%y-%m%d-%H%M%S")
-    log_dir = f"./logs/{algo_name}/{env_name}/size_{args.datasize}/seed_{seed}/{timestamp}"
+    exp_name = "" if exp_name is None else f"{exp_name}/"
+    log_dir = f"./logs/{exp_name}{algo_name}/{env_name}/size_{args.datasize}/seed_{seed}/{timestamp}"
     os.makedirs(log_dir, exist_ok=True)
 
     output_config = {
@@ -74,6 +76,7 @@ def train_offline_rl(algo_name: str,
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("--exp-name", type=str, default=None)
     parser.add_argument("--datasize", type=int, default=int(1e6))
     parser.add_argument("--device", type=str, default="cuda:0")
     parser.add_argument("--seed", type=int, default=42)
@@ -88,4 +91,5 @@ if __name__ == "__main__":
         seed=args.seed,
         env_name=args.env_name,
         algo_name=args.algo_name,
+        exp_name=args.exp_name,
     )
