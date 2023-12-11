@@ -32,7 +32,7 @@ class IqlArgs():
     temperature: float = 3.0
     epoch: int = 1000
     step_per_epoch: int = 1000
-    eval_episodes: int = 10
+    eval_episodes: int = 40
     batch_size: int = 256
     datasize: int = int(1e6)
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
