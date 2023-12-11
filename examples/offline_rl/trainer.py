@@ -15,6 +15,7 @@ from offlinerlkit.utils.logger import Logger
 from cql import cql_trainer, CqlArgs
 from iql import iql_trainer, IqlArgs
 from iio import iio_trainer, IIOArgs
+from combo import combo_trainer, ComboArgs
 
 from io_agent.plant.mujoco import Walker2dEnv, HalfCheetahEnv, HopperEnv
 
@@ -23,6 +24,7 @@ algorithms = dict(
     cql=dict(trainer=cql_trainer, args=CqlArgs),
     iql=dict(trainer=iql_trainer, args=IqlArgs),
     io=dict(trainer=iio_trainer, args=IIOArgs),
+    combo=dict(trainer=combo_trainer, args=ComboArgs),
 )
 
 

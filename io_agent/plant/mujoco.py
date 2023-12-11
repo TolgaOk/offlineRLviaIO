@@ -76,23 +76,26 @@ class MuJoCoEnv(Plant):
 
 
 class Walker2dEnv(MuJoCoEnv):
+    task_name: str = "walker2d-medium-v2"
 
     def __init__(self) -> None:
-        env = gym.make("walker2d-medium-v2")
+        env = gym.make(self.task_name)
         super().__init__(env)
 
 
 class HalfCheetahEnv(MuJoCoEnv):
+    task_name: str = "halfcheetah-medium-v2"
 
     def __init__(self) -> None:
-        env = gym.make("halfcheetah-medium-v2")
+        env = gym.make(self.task_name)
         super().__init__(env)
 
 
 class HopperEnv(MuJoCoEnv):
+    task_name: str = "hopper-medium-v2"
 
     def __init__(self) -> None:
-        env = gym.make("hopper-medium-v2")
+        env = gym.make(self.task_name)
         super().__init__(env)
 
 
@@ -106,7 +109,8 @@ class OldSchoolWrapper(gym.Wrapper):
         return state
 
     def step(self, action: np.ndarray) -> Tuple[Union[np.ndarray, float, bool, Dict[str, Any]]]:
-        next_state, reward, termination, truncation, info = self.env.step(action)
+        next_state, reward, termination, truncation, info = self.env.step(
+            action)
         return next_state, reward, termination or truncation, info
 
     def get_normalized_score(self, score: float) -> float:
@@ -139,5 +143,6 @@ class AugmentedStateWrapper(gym.Wrapper):
             next_state=_next_state,
             history=self._history)
         self._past_state = _next_state.copy()
-        next_state = self.feature_handler.augment_state(_next_state, self._history)
+        next_state = self.feature_handler.augment_state(
+            _next_state, self._history)
         return next_state, *rest
