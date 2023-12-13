@@ -31,11 +31,17 @@ class JaxIOController(IOController):
                  action_constraints_flag: bool = True,
                  state_constraints_flag: bool = True,
                  learning_rate: float = 1e-4,
-                 lr_exp_decay: float = 0.98,
+                 lr_exp_decay: float = 0.97,
+                 scheduler_transition_step: int = 5000,
                  ):
         self.learning_rate = learning_rate
         self.lr_exp_decay = lr_exp_decay
         self.key = key
+        self.scheduler = optax.exponential_decay(
+            learning_rate,
+            transition_steps=scheduler_transition_step,
+            decay_rate=lr_exp_decay)
+        self._last_lr = learning_rate
         super().__init__(
             params=NominalLinearEnvParams(
                 matrices=None,
@@ -49,9 +55,6 @@ class JaxIOController(IOController):
             soften_state_constraints=True,
             softening_penalty=1e9,
         )
-        # self.device = device
-        # self.scheduler = torch.optim.lr_scheduler.ExponentialLR(
-        #     self.train_optimizer, gamma=np.sqrt(lr_exp_decay).item())
 
         self.const_matrix = self.params.constraints.action.matrix
         self.const_vector = self.params.constraints.action.vector
@@ -79,7 +82,7 @@ class JaxIOController(IOController):
         )
 
     @staticmethod
-    def load_states(states: Dict[str, Any]) -> "IterativeIOController":
+    def load_states(states: Dict[str, Any]) -> "JaxIOController":
         raise NotImplementedError
 
     def prepare_train_optimizer(self) -> None:
@@ -88,9 +91,9 @@ class JaxIOController(IOController):
             init_key, self.action_size, self.aug_state_size)
         return jaxopt.GradientDescent(
             # fun=jax.jit(batch_loss_fn),
-            fun=jax.jit(batch_loss_fn),
+            fun=batch_loss_fn,
             # opt=optax.adam(learning_rate=self.learning_rate)
-            stepsize=self.learning_rate,
+            stepsize=self.scheduler,
             acceleration=False
         )
 
@@ -124,6 +127,7 @@ class JaxIOController(IOController):
             jax.tree_util.tree_map(jnp.zeros_like, self.theta_param),
             jnp.zeros_like(states[:1]),
             jnp.zeros_like(exp_actions[:1]))
+        step_count = 0
 
         while True:
             self.key, permute_key = jrd.split(self.key, 2)
@@ -140,14 +144,15 @@ class JaxIOController(IOController):
                     states[indices],
                     exp_actions[indices])
                 self.theta_param = project_theta_uu(param)
-                loss = opt_state.error
+                loss = batch_loss_fn(
+                    param, states[indices], exp_actions[indices])
+                self._last_lr = opt_state.stepsize.item()
+                opt_error = opt_state.error
                 within_epoch_losses.append(loss.item())
                 yield np.mean(within_epoch_losses).item()
 
-            # self.scheduler.step()
             self._q_theta_uu = self.theta_param.theta_uu
             self._q_theta_su = self.theta_param.theta_su
-            # yield np.mean(within_epoch_losses), within_epoch_losses
 
 
 def init_params(key: jrd.KeyArray, action_size: int, state_size: int) -> IOParams:
@@ -190,6 +195,7 @@ def loss_fn(param: IOParams,
     return q_fn(param, state, exp_action) - q_fn(param, state, min_action)
 
 
+@jax.jit
 def batch_loss_fn(param: IOParams,
                   state: Float[Array, "B S"],
                   exp_action: Float[Array, "B A"],

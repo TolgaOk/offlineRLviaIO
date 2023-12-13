@@ -12,7 +12,6 @@ import d4rl
 
 from offlinerlkit.utils.logger import Logger
 
-# from io_agent.control.iterative_io import IterativeIOController
 from io_agent.control.jax_io import JaxIOController
 from io_agent.runner.basic import run_agent
 from io_agent.utils import load_experiment
@@ -24,11 +23,10 @@ class IIOArgs():
     obs_shape: Tuple[int, ...]
     action_dim: int
     num_repeat_actions: int = 10
-    eval_episodes: int = 20
+    eval_episodes: int = 40
     learning_rate: float = 5e-2
-    lr_exp_decay: float = 0.9975
+    lr_exp_decay: float = 0.975
     batch_size: int = 32
-    eval_steps: Tuple[int, ...] = tuple(range(0, int(1e6), int(1e3)))
     datasize: int = int(1e6)
     epoch: int = 1000
     step_per_epoch: int = 1000
@@ -56,6 +54,7 @@ def iio_trainer(args: IIOArgs, env: gym.Env, logger: Logger) -> None:
         action_constraints_flag=True,
         state_constraints_flag=False,
         lr_exp_decay=args.lr_exp_decay,
+        scheduler_transition_step=args.step_per_epoch * (args.epoch // 100)
     )
 
     last_median_eval_score = 0
@@ -71,7 +70,6 @@ def iio_trainer(args: IIOArgs, env: gym.Env, logger: Logger) -> None:
                 logger.logkv_mean("train/loss", step_loss)
                 pbar.set_postfix({
                     "Step loss": f"{step_loss:.6f}",
-                    # "lr": iterative_io_agent.scheduler.get_last_lr()[-1]
                     })
                 pbar.update(1)
 
@@ -103,8 +101,8 @@ def iio_trainer(args: IIOArgs, env: gym.Env, logger: Logger) -> None:
             "eval/normalized_episode_std", last_std_eval_score)
         logger.logkv(
             "eval/normalized_episode_median", last_median_eval_score)
-        # logger.logkv(
-        #     "train/lr", iterative_io_agent.scheduler.get_last_lr()[-1])
+        logger.logkv(
+            "train/lr", iterative_io_agent._last_lr)
         logger.logkv(
             "train/fps", ((epoch + 1) * args.step_per_epoch) / (time.time() - start_time))
         logger.set_timestep((epoch + 1) * args.step_per_epoch)
