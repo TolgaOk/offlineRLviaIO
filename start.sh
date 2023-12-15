@@ -2,12 +2,14 @@
 case "$1" in 
     "--slurm")
         srun \
-            --job-name="sl2rl_job"  \
-            --partition=gpu  \
-            --time=5:00:00  \
+            --job-name="vscode-jupyter-server"  \
+            --account=research-3me-dcsc \
+            --partition=compute \
+            --time=9:00:00  \
             --ntasks=1  \
             --cpus-per-task=8  \
-            --mem-per-cpu=4GB  \
+            --mem-per-cpu=2GB  \
+            --gpus-per-task=0 \
             --pty \
             apptainer exec --writable-tmpfs --nv --bind $PWD image.sif /code tunnel --accept-server-license-terms 
     ;;
