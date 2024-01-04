@@ -181,6 +181,7 @@ def augment_mujoco_dataset(
 
     states = dataset["observations"]
     actions = dataset["actions"]
+    rewards = dataset["rewards"]
 
     dones = np.argwhere(np.logical_or(
         dataset["terminals"], dataset["timeouts"]))
@@ -189,6 +190,8 @@ def augment_mujoco_dataset(
     for done_index in dones:
         done_index = done_index.item()
         trajectory = []
+        episode_return = rewards[start_index:done_index + 1].sum()
+        episode_length = done_index + 1 - start_index
         for index in range(start_index, done_index + 1):
             trajectory.append(
                 Transition(
@@ -198,7 +201,10 @@ def augment_mujoco_dataset(
                     cost=None,
                     termination=None,
                     truncation=None,
-                    info=None,
+                    info={
+                        "episode_return": episode_return,
+                        "episode_length": episode_length,
+                    },
                     reference=None,
                 )
             )

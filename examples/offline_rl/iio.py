@@ -27,6 +27,7 @@ class IIOArgs():
     lr_exp_decay: float = 0.975
     batch_size: int = 32
     datasize: int = int(1e6)
+    data_return_ratio: float = 0.01
     epoch: int = 100
     eval_episodes: int = 40
     step_per_epoch: int = 10000
@@ -41,7 +42,7 @@ def iio_trainer(args: IIOArgs, env: gym.Env, logger: Logger) -> None:
 
     task_name = env.__class__.__name__.lower()[:-3]
     walker_data = load_experiment(os.path.join(
-        args.data_dir, task_name, "rich_augmented_v2"))
+        args.data_dir, task_name, "rich_augmented_v3"))
     augmented_dataset = walker_data["augmented_dataset"]
     feature_handler = walker_data["feature_handler"]
 
@@ -58,8 +59,12 @@ def iio_trainer(args: IIOArgs, env: gym.Env, logger: Logger) -> None:
     )
 
     last_median_eval_score = 0
+    dataset = augmented_dataset[:int(args.datasize)]
+    returns = np.array([transition.info["episode_return"] for transition in dataset])
+    indices = np.argsort(returns)[-int(args.data_return_ratio * len(returns)):]
+
     trainer = iterative_io_agent.train(
-        augmented_dataset[:int(args.datasize)],
+        [dataset[index] for index in indices],
         batch_size=args.batch_size)
     
     start_time = time.time()
