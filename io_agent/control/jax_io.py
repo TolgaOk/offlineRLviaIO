@@ -31,7 +31,7 @@ class JaxIOController(IOController):
                  action_constraints_flag: bool = True,
                  state_constraints_flag: bool = True,
                  learning_rate: float = 1e-4,
-                 lr_exp_decay: float = 0.97,
+                 lr_exp_decay: float = 0.975,
                  scheduler_transition_step: int = 5000,
                  ):
         self.learning_rate = learning_rate
@@ -92,6 +92,7 @@ class JaxIOController(IOController):
         return jaxopt.GradientDescent(
             # fun=jax.jit(batch_loss_fn),
             fun=batch_loss_fn,
+            # max_stepsize=1.0
             # opt=optax.adam(learning_rate=self.learning_rate)
             stepsize=self.scheduler,
             acceleration=False

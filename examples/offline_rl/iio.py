@@ -23,13 +23,13 @@ class IIOArgs():
     obs_shape: Tuple[int, ...]
     action_dim: int
     num_repeat_actions: int = 10
-    eval_episodes: int = 40
     learning_rate: float = 5e-2
     lr_exp_decay: float = 0.975
     batch_size: int = 32
     datasize: int = int(1e6)
-    epoch: int = 1000
-    step_per_epoch: int = 1000
+    epoch: int = 100
+    eval_episodes: int = 40
+    step_per_epoch: int = 10000
     data_dir: str = "./data"
     device: Optional[str] = "auto"
 
@@ -41,7 +41,7 @@ def iio_trainer(args: IIOArgs, env: gym.Env, logger: Logger) -> None:
 
     task_name = env.__class__.__name__.lower()[:-3]
     walker_data = load_experiment(os.path.join(
-        args.data_dir, task_name, "rich_augmented"))
+        args.data_dir, task_name, "rich_augmented_v2"))
     augmented_dataset = walker_data["augmented_dataset"]
     feature_handler = walker_data["feature_handler"]
 

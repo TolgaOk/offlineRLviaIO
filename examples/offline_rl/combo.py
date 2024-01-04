@@ -53,8 +53,8 @@ class ComboArgs():
     model_retain_epochs: int = 5
     real_ratio: float = 0.5
     load_dynamics_path: str = None
-    epoch: int = 1000
-    step_per_epoch: int = 1000
+    epoch: int = 100
+    step_per_epoch: int = 10000
     eval_episodes: int = 40
     batch_size: int = 256
     datasize: int = int(1e6)

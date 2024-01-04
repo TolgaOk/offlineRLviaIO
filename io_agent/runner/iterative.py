@@ -101,7 +101,8 @@ def run_iterative_io(args: IterativeIOArgs,
                 pbar.set_postfix({
                     "Median score": f"{last_median_eval_score:.3f}%",
                     "Epoch loss": f"{avg_epoch_loss:.6f}",
-                    "LR": iterative_io_agent.scheduler.get_last_lr()[-1]})
+                    "LR": iterative_io_agent.scheduler.get_last_lr()[-1]
+                    })
                 pbar.update(1)
 
             iterative_io_trajectories = []
@@ -122,8 +123,10 @@ def run_iterative_io(args: IterativeIOArgs,
             costs[eval_break_epoch] = iterative_io_rewards
             last_median_eval_score = env.env.get_normalized_score(
                 np.median(iterative_io_rewards)) * 100
-            last_mean_eval_score = env.env.get_normalized_score(np.mean(iterative_io_rewards)) * 100
-            last_std_eval_score = env.env.get_normalized_score(np.std(iterative_io_rewards)) * 100
+            last_mean_eval_score = env.env.get_normalized_score(
+                np.mean(iterative_io_rewards)) * 100
+            last_std_eval_score = env.env.get_normalized_score(
+                np.std(iterative_io_rewards)) * 100
             torch.save(iterative_io_agent, os.path.join(
                 save_dir, f"model_{name}_{eval_break_epoch}_{model_seed}"))
             if verbose:
@@ -139,22 +142,6 @@ def run_iterative_io(args: IterativeIOArgs,
                            "LR": iterative_io_agent.scheduler.get_last_lr()[-1]
                            }, fobj)
     return costs, epoch_losses, step_losses, iterative_io_agent
-
-# Currently not being used!
-def evaluate_iterative_io(
-        controller_states: Dict[str, torch.Tensor],
-        env_name: str,
-        trial_seed) -> List[Transition]:
-    env = registered_envs[env_name]()
-    parameters = controller_states.pop("parameters")
-    controller = IterativeIOController(**controller_states)
-    controller.load_state_dict(parameters)
-    return run_agent(
-        agent=controller,
-        plant=env,
-        use_foresight=False,
-        bias_aware=False,
-        env_reset_rng=np.random.default_rng(trial_seed))
 
 
 def augment_mujoco_dataset(
@@ -195,7 +182,8 @@ def augment_mujoco_dataset(
     states = dataset["observations"]
     actions = dataset["actions"]
 
-    dones = np.argwhere(np.logical_or(dataset["terminals"], dataset["timeouts"]))
+    dones = np.argwhere(np.logical_or(
+        dataset["terminals"], dataset["timeouts"]))
 
     start_index = 0
     for done_index in dones:
@@ -221,7 +209,8 @@ def augment_mujoco_dataset(
     start_indices = np.concatenate(
         [np.zeros((1,), dtype=np.int32), dones.ravel()[:-1].astype(np.int32) + 1])
     traj_lengths = (dones + 1).ravel() - start_indices
-    assert np.all([len(traj) == traj_lengths[index] for index, traj in enumerate(trajectories)])
+    assert np.all([len(traj) == traj_lengths[index]
+                  for index, traj in enumerate(trajectories)])
 
     augmented_trajectories = augmenter(trajectories)
     save_experiment(

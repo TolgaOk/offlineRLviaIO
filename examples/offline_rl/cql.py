@@ -37,8 +37,8 @@ class CqlArgs():
     lagrange_threshold: float = 10.0
     cql_alpha_lr: float = 3e-4
     num_repeat_actions: int = 10
-    epoch: int = 1000
-    step_per_epoch: int = 1000
+    epoch: int = 100
+    step_per_epoch: int = 10000
     eval_episodes: int = 40
     batch_size: int = 256
     datasize: int = int(1e6)

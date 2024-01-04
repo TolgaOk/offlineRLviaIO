@@ -4,10 +4,10 @@
 #SBATCH --account=research-3me-dcsc 
 #SBATCH --output=logs/trainer_outs_%j.out 
 #SBATCH --error=logs/trainer_errs_%j.err 
-#SBATCH --partition=compute  
-#SBATCH --time=24:00:00  
+#SBATCH --partition=gpu  
+#SBATCH --time=48:00:00  
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=8  
+#SBATCH --cpus-per-task=8
 #SBATCH --mem-per-cpu=2GB  
 #SBATCH --gpus-per-task=0
 
