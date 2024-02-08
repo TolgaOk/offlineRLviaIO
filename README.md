@@ -1,4 +1,6 @@
-# From Supervised to Reinforcement Learning: an Inverse Optimization Approach
+# Offline Reinforcement Learning via Inverse Optimization
+
+This repository provides the source code of the  experiments and implementation of the algorithms within the paper.
 
 ## Installation
 
@@ -11,22 +13,29 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-Alternatively, you can use [apptainer](https://apptainer.org/) to build an image using the ```image.def``` file. Run ```start.sh --build``` to build a apptainer image and run ```start.sh --run``` to start a container running vs-code.
+Alternatively, you can use [apptainer](https://apptainer.org/) to build a self contained image using the ```image.def``` file. Run ```start.sh --build``` to build a apptainer image and run ```start.sh --run``` to start a container running vs-code server.
 
-### Additional Installations
+### Additional packages
 
-This repository contains several experiments that contains comparison between IO agent and [CQL (Conservative Q-Learning)](https://arxiv.org/abs/2006.04779). Additionally, it includes comparison with MPC agents and [PPO (Proximal Policy Optimization) algorithm](https://arxiv.org/abs/1707.06347). These experiments are run on Quadrotor environment provided in [safe-control-gym](https://arxiv.org/abs/2108.06266). In order to run these experiments, an additional installation process is required.
+This repository contains several experiments that contains comparison between IO agent and several other RL algorithms. These experiments are run on Quadrotor environment provided in [safe-control-gym](https://arxiv.org/abs/2108.06266) and [MuJoCo](https://mujoco.org/) control benchmark. In order to run these experiments, an additional installation process is required.
 
 These steps can be done by following the installation process of the listed repositories below.
+
 - [safe-control-gym](https://github.com/utiasDSL/safe-control-gym) for the Quadrotor environment.
-- [OfflineRL-Kit](https://github.com/yihaosun1124/OfflineRL-Kit/tree/main) for the CQL agent.
+- [OfflineRL-Kit](https://github.com/yihaosun1124/OfflineRL-Kit/tree/main) for the offline RL agent.
 - [Stable Baselines3](https://stable-baselines3.readthedocs.io/en/master/guide/install.html) for the PPO agent.
+- [D4RL](https://github.com/Farama-Foundation/D4RL) for offline MuJoCo control benchmark datasets.
+- For the iterative IO agent:
+    - [jax](https://github.com/google/jax)
+    - [jaxopt](https://github.com/google/jaxopt) 
+    - [jaxtyping](https://github.com/patrick-kidger/jaxtyping)
+    - [optax](https://github.com/google-deepmind/optax)
 
 - - -
 ## Examples
 
 You can find the examples under the ```examples``` folder:
 
-- `examples/fighter.ipynb` : experiments of Sections 4
+- `examples/quadrotor.ipynb` : experiments of Sections 4
 
-The experiment directory contains jupyter-notebooks for the corresponding experiment. You can visualize the results within the notebooks.
+The experiment directory contains jupyter-notebooks for the corresponding experiments. You can visualize the results within the notebooks.
