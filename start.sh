@@ -3,7 +3,7 @@ case "$1" in
     "--slurm")
         srun \
             --job-name="vscode-jupyter-server"  \
-            --account=research-3me-dcsc \
+            --account=research-me-dcsc \
             --partition=compute \
             --time=9:00:00  \
             --ntasks=1  \

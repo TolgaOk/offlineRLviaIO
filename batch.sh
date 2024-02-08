@@ -1,7 +1,7 @@
 #!/bin/sh
 #
 #SBATCH --job-name="sl2rl_job"  
-#SBATCH --account=research-3me-dcsc 
+#SBATCH --account=research-me-dcsc 
 #SBATCH --output=logs/trainer_outs_%j.out 
 #SBATCH --error=logs/trainer_errs_%j.err 
 #SBATCH --partition=gpu  

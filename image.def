@@ -22,8 +22,6 @@ From: tolgaok/jax-cuda-mujoco
     pip install stable-baselines3
     pip install git+https://github.com/Farama-Foundation/d4rl@master#egg=d4rl
     conda install -c conda-forge scikit-learn=1.2.1 scipy=1.10.1
-    pip install qpth
-    pip install geotorch
 
     cd {{ WORKDIR }}
     pip install -e .
