@@ -8,6 +8,16 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as tck
 from scipy.interpolate import CubicSpline
 
+mpl_params = lambda fontsize : {
+        "axes.labelsize": fontsize,
+        "axes.titlesize": fontsize,
+        "legend.fontsize": fontsize * 0.8,
+        "xtick.labelsize": fontsize * 0.8,
+        "ytick.labelsize": fontsize * 0.8,
+        "font.family": "sans-serif",
+        "font.sans-serif": ["DejaVu Sans", "Helvetica", "Avant Garde", "Computer Modern Sans serif"],
+        "font.serif": ["Times", "Palatino", "New Century Schoolbook", "Bookman", "Computer Modern Roman"],
+    }
 
 def histogram_figure(cost_data: Dict[str, List[float]],
                      title: str,
@@ -180,17 +190,7 @@ def histogram_figure_plt(cost_data: Dict[str, List[float]],
                          figsize: Tuple[int] = (6, 3)
                          ) -> Any:
 
-    params = {
-        "axes.labelsize": fontsize,
-        "axes.titlesize": fontsize,
-        "legend.fontsize": fontsize * 0.8,
-        "xtick.labelsize": fontsize * 0.8,
-        "ytick.labelsize": fontsize * 0.8,
-        "font.family": "sans-serif",
-        "font.sans-serif": ["Helvetica", "Avant Garde", "Computer Modern Sans serif"],
-        "font.serif": ["Times", "Palatino", "New Century Schoolbook", "Bookman", "Computer Modern Roman"],
-    }
-    mpl.rcParams.update(params)
+    mpl.rcParams.update(mpl_params(fontsize))
 
     fig, axes = plt.subplots(nrows=1, figsize=figsize)
     if log_yaxis:
@@ -249,17 +249,8 @@ def tube_figure_plt(cost_data: Dict[str, Dict[int, List[float]]],
                     use_grid: bool = True,
                     fontsize: int = 10,
                     figsize: Tuple[int] = (4, 2)) -> Any:
-    params = {
-        "axes.labelsize": fontsize,
-        "axes.titlesize": fontsize,
-        "legend.fontsize": fontsize * 0.8,
-        "xtick.labelsize": fontsize * 0.8,
-        "ytick.labelsize": fontsize * 0.8,
-        "font.family": "sans-serif",
-        "font.sans-serif": ["Helvetica", "Avant Garde", "Computer Modern Sans serif"],
-        "font.serif": ["Times", "Palatino", "New Century Schoolbook", "Bookman", "Computer Modern Roman"],
-    }
-    mpl.rcParams.update(params)
+
+    mpl.rcParams.update(mpl_params(fontsize))
 
     fig, axes = plt.subplots(nrows=1, figsize=figsize)
     if log_yaxis:
