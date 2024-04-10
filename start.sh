@@ -3,7 +3,7 @@ case "$1" in
     "--slurm")
         srun \
             --job-name="vscode-jupyter-server"  \
-            --account=research-3me-dcsc \
+            --account=research-me-dcsc \
             --partition=compute \
             --time=9:00:00  \
             --ntasks=1  \
@@ -11,7 +11,7 @@ case "$1" in
             --mem-per-cpu=2GB  \
             --gpus-per-task=0 \
             --pty \
-            apptainer exec --writable-tmpfs --nv --bind $PWD image.sif /code tunnel --accept-server-license-terms 
+            apptainer exec --writable-tmpfs --nv --bind $PWD image.sif /code tunnel --accept-server-license-terms
     ;;
     "--run")
         apptainer exec --writable-tmpfs --nv--bind $PWD image.sif /code tunnel --accept-server-license-terms

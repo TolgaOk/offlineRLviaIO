@@ -225,7 +225,7 @@ def tube_figure_plt(cost_data: Dict[str, Dict[int, List[float]]],
                     log_xaxis: bool = False,
                     use_grid: bool = True,
                     figsize: Tuple[int] = (6, 3)) -> Any:
-    fig, axes = plt.subplots(nrows=1, dpi=300, figsize=figsize)
+    fig, axes = plt.subplots(nrows=1, figsize=figsize)
     axes.yaxis.set_minor_locator(tck.AutoMinorLocator())
     axes.xaxis.set_minor_locator(tck.AutoMinorLocator())
 

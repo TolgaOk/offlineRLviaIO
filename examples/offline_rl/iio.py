@@ -27,7 +27,7 @@ class IIOArgs():
     lr_exp_decay: float = 0.975
     batch_size: int = 32
     datasize: int = int(1e6)
-    data_return_ratio: float = 0.01
+    data_return_ratio: float = 1.0
     epoch: int = 100
     eval_episodes: int = 40
     step_per_epoch: int = 10000
