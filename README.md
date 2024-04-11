@@ -1,6 +1,6 @@
 # Offline Reinforcement Learning via Inverse Optimization
 
-This repository provides the source code of the  experiments and implementation of the algorithms within the paper.
+This repository provides the source code of the  experiments and implementation of the algorithms proposed in the paper.
 
 ## Installation
 
