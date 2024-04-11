@@ -1,3 +1,5 @@
+raise DeprecationWarning
+
 import unittest
 from copy import deepcopy
 
