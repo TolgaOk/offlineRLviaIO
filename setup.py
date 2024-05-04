@@ -3,10 +3,10 @@ from setuptools import setup
 setup(
     name="io_agent",
     version="1.0",
-    author="",
-    author_email="",
+    author="Tolga Ok",
+    author_email="tok@tudelt.nl",
     url="",
-    description="From Supervised to Reinforcement Learning: an Inverse Optimization Approach",
+    description="Offline Reinforcement Learning via Inverse Optimization",
     long_description=(""),
     license="MIT",
     packages=["io_agent"],

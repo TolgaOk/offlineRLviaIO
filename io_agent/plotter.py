@@ -1,14 +1,12 @@
 from typing import List, Dict, Tuple, Any
-
 import numpy as np
 import plotly.graph_objects as go
 import plotly.figure_factory as ff
 import plotly.express as px
-
-import numpy as np
-import seaborn as sns
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import matplotlib.ticker as tck
+from scipy.interpolate import CubicSpline
 
 
 def histogram_figure(cost_data: Dict[str, List[float]],
@@ -28,7 +26,8 @@ def histogram_figure(cost_data: Dict[str, List[float]],
     cost_label_pair = list(cost_data.items())
     costs = [item[1] for item in cost_label_pair]
     labels = [item[0] for item in cost_label_pair]
-    colors = [color_list[index % len(color_list)] for index in range(len(labels))]
+    colors = [color_list[index % len(color_list)]
+              for index in range(len(labels))]
 
     fig = ff.create_distplot(
         costs,
@@ -99,7 +98,8 @@ def tube_figure(cost_data: Dict[str, Dict[int, List[float]]],
     cost_label_pair = list(cost_data.items())
     cost_data = [item[1] for item in cost_label_pair]
     labels = [item[0] for item in cost_label_pair]
-    colors = [color_list[index % len(color_list)] for index in range(len(labels))]
+    colors = [color_list[index % len(color_list)]
+              for index in range(len(labels))]
 
     percentile_lower, percentile_up = percentiles
     for color, cost_dict, label in zip(colors, cost_data, labels):
@@ -170,51 +170,74 @@ def tube_figure(cost_data: Dict[str, Dict[int, List[float]]],
 
 
 def histogram_figure_plt(cost_data: Dict[str, List[float]],
-                         title: str,
                          color_list: List[str] = px.colors.qualitative.T10,
                          x_label: str = "episodic cost",
                          y_label: str = "density",
-                         low_y: str = None,  # 1e-3,
-                         high_y: str = None,  # 1e-1,
+                         low_y: str = None,
+                         high_y: str = None,
                          log_yaxis: bool = False,
-                         use_grid: bool = False,
-                         figsize: Tuple[int] = (6, 3),
-                         **kde_kwargs):
+                         fontsize: int = 10,
+                         figsize: Tuple[int] = (6, 3)
+                         ) -> Any:
 
-    fig, axes = plt.subplots(nrows=1, dpi=300, figsize=figsize)
-    axes.yaxis.set_minor_locator(tck.AutoMinorLocator())
-    axes.xaxis.set_minor_locator(tck.AutoMinorLocator())
+    params = {
+        "axes.labelsize": fontsize,
+        "axes.titlesize": fontsize,
+        "legend.fontsize": fontsize * 0.8,
+        "xtick.labelsize": fontsize * 0.8,
+        "ytick.labelsize": fontsize * 0.8,
+        "font.family": "sans-serif",
+        "font.sans-serif": ["Helvetica", "Avant Garde", "Computer Modern Sans serif"],
+        "font.serif": ["Times", "Palatino", "New Century Schoolbook", "Bookman", "Computer Modern Roman"],
+    }
+    mpl.rcParams.update(params)
 
+    fig, axes = plt.subplots(nrows=1, figsize=figsize)
+    if log_yaxis:
+        axes.set_yscale("log", base=10)
+
+    axes.tick_params(axis="x", color="black",
+                     labelcolor="black", which="major")
+    for spine in axes.spines.values():
+        spine.set_edgecolor("black")
+        spine.set_linewidth(0.75)
+
+    plt.locator_params(axis="x", nbins=10)
     for index, (name, data) in enumerate(cost_data.items()):
-        sns.kdeplot(np.array(data), fill=True, label=name, **kde_kwargs, color=color_list[index])
-        plt.axvline(x=np.median(data), color=color_list[index], ls=":", lw=2)
+        color = color_list[index]
+        bin_y, bin_x = np.histogram(data, bins=6, density=True)
+        bin_x = np.convolve(bin_x, np.ones((2,))/2,
+                            mode="valid")  # take the mid-point
 
-    axes.tick_params(axis="x", color="black", labelcolor="black", which="major")
+        x_space = np.linspace(bin_x[0], bin_x[-1], 100)
+        y_space = np.clip(CubicSpline(bin_x, bin_y)(x_space, ), 0, None)
+        axes.fill_between(x_space, np.zeros_like(y_space),
+                          y_space, alpha=0.5, color=color)
+        axes.plot(
+            np.concatenate([x_space[:1], x_space, x_space[-1:]]),
+            np.concatenate([[0], y_space, [0]]),
+            color=color,
+            label=name)
+        plt.axvline(x=np.median(data), color=color, ls="--", lw=2)
+
+    axes.tick_params(axis="x", color="black",
+                     labelcolor="black", which="major")
     for spine in axes.spines.values():
         spine.set_edgecolor("black")
         spine.set_linewidth(0.5)
 
-    plt.legend(frameon=True, edgecolor="inherit", framealpha=1.0, fancybox=False, loc="best")
-    frame = axes.legend().get_frame()
-    frame.set_edgecolor("black")
-    frame.set_linewidth(0.5)
-    frame.set_boxstyle("Round", pad=0.2, rounding_size=-0.01)
-    plt.title(title)
+    plt.legend(frameon=True, edgecolor="inherit",
+               framealpha=1.0, fancybox=False, loc="best")
 
-    sns.set_style("whitegrid")
-    plt.grid(use_grid)
     if low_y is not None or high_y is not None:
         plt.ylim(low_y, high_y)
-    plt.xlabel(x_label, fontsize=10)
-    plt.ylabel(y_label, fontsize=10)
-    if log_yaxis:
-        plt.yscale("log")
+    plt.xlabel(x_label)
+    plt.ylabel(y_label)
 
-    return fig
+    return fig, axes
 
 
 def tube_figure_plt(cost_data: Dict[str, Dict[int, List[float]]],
-                    title: str,
                     color_list: List[str] = px.colors.qualitative.T10,
                     percentiles: Tuple[int] = (20, 80),
                     x_label: str = "episodic cost",
@@ -224,22 +247,42 @@ def tube_figure_plt(cost_data: Dict[str, Dict[int, List[float]]],
                     log_yaxis: bool = False,
                     log_xaxis: bool = False,
                     use_grid: bool = True,
-                    figsize: Tuple[int] = (6, 3)) -> Any:
-    fig, axes = plt.subplots(nrows=1, figsize=figsize)
-    axes.yaxis.set_minor_locator(tck.AutoMinorLocator())
-    axes.xaxis.set_minor_locator(tck.AutoMinorLocator())
+                    fontsize: int = 10,
+                    figsize: Tuple[int] = (4, 2)) -> Any:
+    params = {
+        "axes.labelsize": fontsize,
+        "axes.titlesize": fontsize,
+        "legend.fontsize": fontsize * 0.8,
+        "xtick.labelsize": fontsize * 0.8,
+        "ytick.labelsize": fontsize * 0.8,
+        "font.family": "sans-serif",
+        "font.sans-serif": ["Helvetica", "Avant Garde", "Computer Modern Sans serif"],
+        "font.serif": ["Times", "Palatino", "New Century Schoolbook", "Bookman", "Computer Modern Roman"],
+    }
+    mpl.rcParams.update(params)
 
-    axes.tick_params(axis="x", color="black", labelcolor="black", which="major")
+    fig, axes = plt.subplots(nrows=1, figsize=figsize)
+    if log_yaxis:
+        axes.set_yscale("log", base=10)
+    if log_xaxis:
+        axes.set_xscale("log", base=10)
+
+    axes.tick_params(axis="x", color="black",
+                     labelcolor="black", which="major")
     for spine in axes.spines.values():
         spine.set_edgecolor("black")
-        spine.set_linewidth(0.5)
+        spine.set_linewidth(0.75)
 
     cost_label_pair = list(cost_data.items())
     cost_data = [item[1] for item in cost_label_pair]
     labels = [item[0] for item in cost_label_pair]
-    colors = [color_list[index % len(color_list)] for index in range(len(labels))]
+    colors = [color_list[index % len(color_list)]
+              for index in range(len(labels))]
 
     percentile_lower, percentile_up = percentiles
+    plt.grid(use_grid, which="both", linestyle="--", linewidth=0.4)
+    if not log_xaxis:
+        plt.locator_params(axis="x", nbins=10)
     for color, cost_dict, label in zip(colors, cost_data, labels):
         values = {key: np.percentile(cost_list, [percentile_lower, 50, percentile_up])
                   for key, cost_list in cost_dict.items()}
@@ -254,22 +297,12 @@ def tube_figure_plt(cost_data: Dict[str, Dict[int, List[float]]],
                           alpha=0.2,
                           color=color)
 
-    plt.legend(frameon=True, edgecolor="inherit", framealpha=1.0, fancybox=False, loc="best")
-    frame = axes.legend().get_frame()
-    frame.set_edgecolor("black")
-    frame.set_linewidth(0.5)
-    frame.set_boxstyle("Round", pad=0.2, rounding_size=-0.01)
-    plt.title(title)
+    plt.legend(frameon=True, edgecolor="inherit",
+               framealpha=1.0, fancybox=False, loc="best")
 
-    sns.set_style("whitegrid")
-    plt.grid(use_grid, which="minor", linestyle="--")
     if low_y is not None or high_y is not None:
         plt.ylim(low_y, high_y)
-    plt.xlabel(x_label, fontsize=10)
-    plt.ylabel(y_label, fontsize=10)
-    if log_yaxis:
-        plt.yscale("log")
-    if log_xaxis:
-        plt.xscale("log")
+    plt.xlabel(x_label)
+    plt.ylabel(y_label)
 
     return fig, axes
