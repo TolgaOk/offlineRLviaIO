@@ -7,7 +7,7 @@ import jax.numpy as jnp
 import jax.random as jrd
 import jaxopt
 import optax
-from jaxtyping import Array, Float
+from jaxtyping import Array, Float, ArrayLike
 
 from io_agent.plant.base import (NominalLinearEnvParams,
                                  LinearConstraints)
@@ -26,7 +26,7 @@ class JaxIOController(IOController):
     def __init__(self,
                  constraints: LinearConstraints,
                  feature_handler: FeatureHandler,
-                 key: jrd.KeyArray,
+                 key: ArrayLike,
                  include_constraints: bool = True,
                  action_constraints_flag: bool = True,
                  state_constraints_flag: bool = True,
@@ -156,7 +156,7 @@ class JaxIOController(IOController):
             self._q_theta_su = self.theta_param.theta_su
 
 
-def init_params(key: jrd.KeyArray, action_size: int, state_size: int) -> IOParams:
+def init_params(key: ArrayLike, action_size: int, state_size: int) -> IOParams:
     eig_val_key, eig_vec_key, su_key = jrd.split(key, 3)
 
     eig_vecs = jrd.orthogonal(eig_vec_key, action_size)
