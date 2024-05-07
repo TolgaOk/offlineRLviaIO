@@ -58,7 +58,7 @@ def iio_trainer(args: IIOArgs, env: gym.Env, logger: Logger) -> None:
         scheduler_transition_step=args.step_per_epoch * (args.epoch // 100)
     )
 
-    last_median_eval_score = 0
+    best_mean_eval_score = -np.inf
     dataset = augmented_dataset[:int(args.datasize)]
     returns = np.array([transition.info["episode_return"] for transition in dataset])
     indices = np.argsort(returns)[-int(args.data_return_ratio * len(returns)):]
@@ -66,7 +66,7 @@ def iio_trainer(args: IIOArgs, env: gym.Env, logger: Logger) -> None:
     trainer = iterative_io_agent.train(
         [dataset[index] for index in indices],
         batch_size=args.batch_size)
-    
+
     start_time = time.time()
     for epoch in range(args.epoch):
         with tqdm(total=args.step_per_epoch, desc=f"Epoch: {epoch + 1}/{args.epoch}") as pbar:
@@ -75,7 +75,7 @@ def iio_trainer(args: IIOArgs, env: gym.Env, logger: Logger) -> None:
                 logger.logkv_mean("train/loss", step_loss)
                 pbar.set_postfix({
                     "Step loss": f"{step_loss:.6f}",
-                    })
+                })
                 pbar.update(1)
 
         iterative_io_trajectories = []
@@ -113,8 +113,16 @@ def iio_trainer(args: IIOArgs, env: gym.Env, logger: Logger) -> None:
         logger.set_timestep((epoch + 1) * args.step_per_epoch)
         logger.dumpkvs()
 
-        torch.save(iterative_io_agent.state_dict(),
-                    os.path.join(logger.checkpoint_dir, "policy.pth"))
+        if last_mean_eval_score > best_mean_eval_score:
+            best_mean_eval_score = last_mean_eval_score
+            torch.save({"epoch": epoch,
+                        "scores": {
+                            "median": last_median_eval_score,
+                            "mean": last_mean_eval_score,
+                            "std": last_std_eval_score,
+                        },
+                        **iterative_io_agent.state_dict()},
+                       os.path.join(logger.checkpoint_dir, "policy.pth"))
 
     logger.log("total time: {:.2f}s".format(time.time() - init_time))
     torch.save(iterative_io_agent.state_dict(), os.path.join(

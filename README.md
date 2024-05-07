@@ -22,9 +22,9 @@ This repository contains several experiments that contains comparison between IO
 These steps can be done by following the installation process of the listed repositories below.
 
 - [safe-control-gym](https://github.com/utiasDSL/safe-control-gym) for the Quadrotor environment.
+- [D4RL](https://github.com/Farama-Foundation/D4RL) for offline MuJoCo control benchmark datasets.
 - [OfflineRL-Kit](https://github.com/yihaosun1124/OfflineRL-Kit/tree/main) for the offline RL agent.
 - [Stable Baselines3](https://stable-baselines3.readthedocs.io/en/master/guide/install.html) for the PPO agent.
-- [D4RL](https://github.com/Farama-Foundation/D4RL) for offline MuJoCo control benchmark datasets.
 - For the iterative IO agent:
     - [jax](https://github.com/google/jax)
     - [jaxopt](https://github.com/google/jaxopt) 
