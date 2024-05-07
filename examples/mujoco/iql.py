@@ -3,7 +3,6 @@ from dataclasses import dataclass
 import numpy as np
 import torch
 import gym
-import d4rl
 
 from offlinerlkit.nets import MLP
 from offlinerlkit.modules import ActorProb, Critic, DiagGaussian

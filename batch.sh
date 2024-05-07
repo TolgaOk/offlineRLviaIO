@@ -12,7 +12,7 @@
 #SBATCH --gpus-per-task=0
 
 srun apptainer run --writable-tmpfs --nv --bind $PWD image.sif /bin/bash -c \
-    "cd examples/offline_rl && \
+    "cd examples/mujoco && \
      pip install jaxopt && \
      pip install jaxtyping && \
      pip install optax && \
