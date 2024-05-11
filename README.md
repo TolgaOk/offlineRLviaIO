@@ -45,7 +45,7 @@ The experiment directory contains jupyter-notebooks for the corresponding experi
 Please cite the following work if you found it useful.
 
 ```bibtex
-@article{ioannis2024learning,
+@article{dimanidis2024learning,
   title={Offline Reinforcement Learning via Inverse Optimization},
   author={Ioannis Dimanidis, Tolga Ok, and Peyman Mohajerin Esfahani},
   journal={http://www.dcsc.tudelft.nl/~mohajerin/Publications/journal/2024/RL_Inv.pdf},
