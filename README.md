@@ -31,7 +31,7 @@ These steps can be done by following the installation process of the listed repo
     - [jaxtyping](https://github.com/patrick-kidger/jaxtyping)
     - [optax](https://github.com/google-deepmind/optax)
 
-- - -
+
 ## Examples
 
 You can find the examples under the ```examples``` folder:
@@ -39,3 +39,16 @@ You can find the examples under the ```examples``` folder:
 - `examples/quadrotor.ipynb` : experiments of Sections 4
 
 The experiment directory contains jupyter-notebooks for the corresponding experiments. You can visualize the results within the notebooks.
+
+
+## Citing
+Please cite the following work if you found it useful.
+
+```bibtex
+@article{ioannis2024learning,
+  title={Offline Reinforcement Learning via Inverse Optimization},
+  author={Ioannis Dimanidis, Tolga Ok, and Peyman Mohajerin Esfahani},
+  journal={http://www.dcsc.tudelft.nl/~mohajerin/Publications/journal/2024/RL_Inv.pdf},
+  year={2024}
+}
+```
