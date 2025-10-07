@@ -1,0 +1,34 @@
+name: io-agent
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - pip
+  - numpy=1.24.3
+  - scipy=1.10.1
+  - pandas=2.1.0
+  - scikit-learn>=1.3,<2.0
+  - matplotlib
+  - seaborn=0.12.2
+  - tqdm>=4.66,<5
+  - plotly=5.6.0
+  - sympy=1.12
+  - notebook=6.5.2
+  - cvxpy=1.3.1
+  - pytorch=1.13
+  # Mosek via pip; conda package not available on osx-arm64 at this pin
+  - gymnasium>=0.28,<0.29
+  - pybullet
+  - pip:
+      - mosek==10.1.11
+      - safe-control-gym @ git+https://github.com/utiasDSL/safe-control-gym.git
+      - d4rl @ git+https://github.com/Farama-Foundation/D4RL.git
+      - offlinerlkit @ git+https://github.com/yihaosun1124/OfflineRL-Kit.git
+      - stable-baselines3>=2
+      - jax
+      - jaxopt
+      - jaxtyping
+      - optax
+

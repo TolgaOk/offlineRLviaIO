@@ -1,13 +1,38 @@
-*.pyc
-*.egg-info
-*.DS_Store
-.vscode
-local/
-*.html
+# OS / Editors
+.DS_Store
+.vscode/
+.idea/
+
+# Environments & Tools
+.venv/
+uv.lock
+.python-version
+
+# Python build / artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.mypy_cache/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Notebooks outputs
 *_files
 *_data
+
+# Project-specific artifacts
+local/
 log
-*.sif
-*data
 *logs
+*data
 figures
+*.html
+*.sif
