@@ -218,7 +218,8 @@ def steady_state_cost(trajectories: List[List[Transition]], ratio: float) -> Lis
 def parallelize(n_proc: int,
                 fn: Callable[[Any], Any],
                 kwargs_list: List[Dict[str, Any]],
-                loading_bar_kwargs: Optional[Dict[str, Any]] = None
+                loading_bar_kwargs: Optional[Dict[str, Any]] = None,
+                use_multiprocessing: bool = False
                 ) -> List[Any]:
 
     def _async_execute_wrapper() -> None:
@@ -234,15 +235,18 @@ def parallelize(n_proc: int,
                 result_queue.put({"key": key, "result": None})
                 traceback.print_exc()
 
+    loading_bar = (partial(tqdm, **loading_bar_kwargs)
+                   if loading_bar_kwargs is not None
+                   else lambda x: x)
+
+    if use_multiprocessing is False:
+        return [fn(**kwargs) for kwargs in loading_bar(kwargs_list)]
+
     result_queue = Queue()
     work_queue = Queue()
 
     for key, kwargs in enumerate(kwargs_list):
         work_queue.put((kwargs, key))
-
-    loading_bar = (partial(tqdm, **loading_bar_kwargs)
-                   if loading_bar_kwargs is not None
-                   else lambda x: x)
 
     process_list = []
     for _ in range(n_proc):
