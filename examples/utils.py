@@ -2,9 +2,19 @@ from functools import partial
 import numpy as np
 import multiprocessing
 
+from io_agent.plant.base import OldSchoolWrapper
+import torch
+from collections import defaultdict
+from itertools import product, chain
+import os
+import json
+from typing import Tuple, NamedTuple, List
 from io_agent.plant.quadrotor import QuadrotorEnv
 from io_agent.runner.basic import run_mpc
 from io_agent.utils import parallelize, save_experiment, load_experiment
+from io_agent.plant.base import OldSchoolWrapper
+from io_agent.evaluator import Transition
+from dataclasses import asdict
 
 
 def generate_mpc_quadrotor_dataset(horizon: int = 25,
@@ -37,3 +47,25 @@ def generate_mpc_quadrotor_dataset(horizon: int = 25,
         exp_dir="./quadrotor_data/dataset",
         name="mpc_without_hindsight"
     )
+
+def trajectory_to_dataset(trajectory: List[Transition], env: QuadrotorEnv) -> dict:
+    dict_dataset = {
+        name: np.stack([asdict(transition)[key]
+                       for transition in chain(*trajectory)], axis=0)
+        for name, key in (["observations", "state"],
+                          ["actions", "action"],
+                          ["terminals", "termination"],
+                          ["rewards", "cost"],
+                          ["next_observations", "next_state"])
+    }
+    dict_dataset["rewards"] = np.exp(-dict_dataset["rewards"])
+
+    act_low = env.action_space.low.reshape(1, -1)
+    act_high = env.action_space.high.reshape(1, -1)
+    dict_dataset["actions"] = (dict_dataset["actions"] - act_low) / (act_high - act_low) * 2 - 1
+    dict_dataset["observations"] = dict_dataset["observations"][:, :env.observation_space.shape[0]]
+    dict_dataset["next_observations"] = dict_dataset["next_observations"][:,
+                                                                          :env.observation_space.shape[0]]
+
+    return dict_dataset
+
