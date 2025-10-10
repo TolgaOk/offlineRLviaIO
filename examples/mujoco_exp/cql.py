@@ -44,7 +44,7 @@ class CqlArgs():
     device: Optional[str] = "cuda" if torch.cuda.is_available() else "cpu"
 
 
-def cql_trainer(args: CqlArgs, env: gym.Env, logger: Logger) -> None:
+def cql_trainer(args: CqlArgs, env: gym.Env, logger: Logger, dataset: Optional[dict] = None) -> None:
 
     actor_backbone = MLP(input_dim=np.prod(
         args.obs_shape), hidden_dims=args.hidden_dims)
@@ -90,7 +90,8 @@ def cql_trainer(args: CqlArgs, env: gym.Env, logger: Logger) -> None:
     print("Number of parameters:", sum(param.numel()
           for key, param in policy.named_parameters()))
 
-    dataset = env.env.get_dataset()
+    if not dataset:
+        dataset = env.env.get_dataset()
     dict_dataset = {}
 
     for key in ("observations",
