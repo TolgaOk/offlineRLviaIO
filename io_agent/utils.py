@@ -36,6 +36,10 @@ class FeatureHandler():
                  use_noise_regressor: bool,
                  use_co_product: bool = False,
                  use_sinusoidal: bool = False,
+                 use_rff: bool = False,
+                 rff_n_features: int = 1024,
+                 rff_sigma: float = 1.0,
+                 rff_seed: int = 42,
                  scale_factor: float = 1.0,
                  state_high: Optional[np.ndarray] = None,
                  state_low: Optional[np.ndarray] = None,
@@ -60,6 +64,9 @@ class FeatureHandler():
         self.add_bias = add_bias
         self.use_co_product = use_co_product
         self.use_sinusoidal = use_sinusoidal
+        self.use_rff = use_rff
+        self.rff_n_features = rff_n_features
+        self.rff_sigma = rff_sigma
         self.scale_factor = scale_factor
         self.use_state_regressor = use_state_regressor
         self.use_action_regressor = use_action_regressor
@@ -74,18 +81,33 @@ class FeatureHandler():
         self.output_size = output_size if output_size is not None else params.matrices.c_matrix.shape[
             0]
 
+        # Initialize RFF weights (fixed random projection)
+        if self.use_rff:
+            rng = np.random.default_rng(rff_seed)
+            self._rff_W = rng.standard_normal((self.state_size, rff_n_features)) / rff_sigma
+            self._rff_b = rng.uniform(0, 2 * np.pi, rff_n_features)
+
+    def rff_transform(self, state: np.ndarray) -> np.ndarray:
+        """Apply Random Fourier Features transform to state.
+
+        Approximates RBF kernel: k(x,y) ≈ φ(x)·φ(y)
+        where φ(x) = sqrt(2/D) * cos(Wx + b)
+        """
+        return np.sqrt(2.0 / self.rff_n_features) * np.cos(state @ self._rff_W + self._rff_b)
+
     @property
     def aug_state_size(self) -> int:
         """ Compute the augmented state/feature size
 
         Returns:
-            int: Size of the augmented state/features 
+            int: Size of the augmented state/features
         """
         return (
             self.state_size
             + int(self.add_bias)
             + (self.state_size ** 2) * int(self.use_co_product)
             + (self.state_size * 8) * int(self.use_sinusoidal)
+            + self.rff_n_features * int(self.use_rff)
             + (self.state_size * self.n_past) * int(self.use_state_regressor)
             + (self.noise_size * self.n_past) * int(self.use_noise_regressor)
             + (self.action_size * self.n_past) * int(self.use_action_regressor)
@@ -202,6 +224,8 @@ class FeatureHandler():
         if self.use_sinusoidal:
             for fn, freq in product((np.cos, np.sin), (1, 2, 4, 8)):
                 features.append(fn(np.pi * state * self.scale_factor * freq))
+        if self.use_rff:
+            features.append(self.rff_transform(state * self.scale_factor))
         aug_state = np.concatenate([state * self.scale_factor, *features])
         return aug_state
 
