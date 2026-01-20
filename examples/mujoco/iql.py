@@ -35,6 +35,7 @@ class IqlArgs():
     batch_size: int = 256
     datasize: int = int(1e6)
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
+    data_seed: int = None  # if None, use first N samples; otherwise random sample
 
 
 def normalize_rewards(dataset):
@@ -139,13 +140,17 @@ def iql_trainer(args: IqlArgs, env: gym.Env, logger: Logger) -> None:
     dataset = env.env.get_dataset()
     dataset = normalize_rewards(dataset)
     dict_dataset = {}
+    keys = ("observations", "actions", "terminals", "rewards", "next_observations")
 
-    for key in ("observations",
-                "actions",
-                "terminals",
-                "rewards",
-                "next_observations"):
-        dict_dataset[key] = dataset[key][:args.datasize]
+    if args.data_seed is not None:
+        data_rng = np.random.default_rng(args.data_seed)
+        n_samples = min(args.datasize, len(dataset["observations"]))
+        indices = data_rng.choice(len(dataset["observations"]), size=n_samples, replace=False)
+        for key in keys:
+            dict_dataset[key] = dataset[key][indices]
+    else:
+        for key in keys:
+            dict_dataset[key] = dataset[key][:args.datasize]
 
     buffer = ReplayBuffer(
         buffer_size=len(dict_dataset["observations"]),

@@ -35,6 +35,7 @@ class IOArgs:
     eval_episodes: int = 40
     step_per_epoch: int = 10000
     device: Optional[str] = "cpu"
+    data_seed: Optional[int] = None  # if None, use first N samples; otherwise random sample with this seed
 
 
 def io_trainer(args: IOArgs, env: gym.Env, logger: Logger) -> None:
@@ -67,7 +68,12 @@ def io_trainer(args: IOArgs, env: gym.Env, logger: Logger) -> None:
     print(f"[DEBUG] Create agent: {time.time() - t0:.2f}s")
 
     best_mean_eval_score = -np.inf
-    dataset = augmented_dataset[: int(args.datasize)]
+    if args.data_seed is not None:
+        data_rng = np.random.default_rng(args.data_seed)
+        data_indices = data_rng.choice(len(augmented_dataset), size=min(int(args.datasize), len(augmented_dataset)), replace=False)
+        dataset = [augmented_dataset[i] for i in data_indices]
+    else:
+        dataset = augmented_dataset[: int(args.datasize)]
     returns = np.array([transition.info["episode_return"] for transition in dataset])
     indices = np.argsort(returns)[-int(args.data_return_ratio * len(returns)) :]
 
@@ -135,6 +141,7 @@ def io_trainer(args: IOArgs, env: gym.Env, logger: Logger) -> None:
             "train/fps",
             ((epoch + 1) * args.step_per_epoch) / (time.time() - start_time),
         )
+        logger.logkv("train/wall_time", time.time() - start_time)
         logger.set_timestep((epoch + 1) * args.step_per_epoch)
         logger.dumpkvs()
 
