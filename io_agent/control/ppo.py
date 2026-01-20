@@ -2,7 +2,7 @@ from typing import Tuple, Union, Optional, Type, Dict, Any
 import numpy as np
 
 try:
-    from stable_baselines3.common.vec_env import SubprocVecEnv
+    from stable_baselines3.common.vec_env import SubprocVecEnv, DummyVecEnv
     from stable_baselines3.common.env_util import make_vec_env
     from stable_baselines3 import PPO
 except ImportError as err:
@@ -42,7 +42,7 @@ class PPoController():
               ppo_kwargs: Dict[str, Any] = {},
               **learn_kwargs
               ) -> PPO:
-        vec_env = make_vec_env(env_fn, n_envs=n_envs, vec_env_cls=SubprocVecEnv)
+        vec_env = make_vec_env(env_fn, n_envs=n_envs, vec_env_cls=DummyVecEnv)
         model = PPO("MlpPolicy", vec_env, verbose=int(verbose), seed=seed, **ppo_kwargs)
         model.learn(total_timesteps=total_timesteps, progress_bar=False, **learn_kwargs)
         if path is not None:

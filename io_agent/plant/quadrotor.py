@@ -202,8 +202,7 @@ class QuadrotorEnv(Plant):
                options: Optional[Dict[str, Any]] = None
                ) -> Tuple[Union[np.ndarray, Optional[Dict[str, Any]]]]:
         self._state = self.env.reset(seed=rng.integers(0, 2**30).item())
-        return self._state, {}
-    
+        return self._state    
     def default_lin_point(self) -> InputValues:
         return InputValues(
             state=self.env.symbolic.X_EQ,

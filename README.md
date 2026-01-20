@@ -6,10 +6,14 @@ This repository provides the source code of the  experiments and implementation 
 
 To run the provided examples you will need to install [MOSEK](https://docs.mosek.com/10.0/install/installation.html) along with the MOSEK license. MOSEK provides free academic [license](https://www.mosek.com/products/academic-licenses/).
 
-Once the MOSEK installation is completed you can install the required packages and the research package.
+Once the MOSEK installation is completed you can install the required packages and the research package using conda.
 
 ```bash
-pip install -r requirements.txt
+# Create and activate conda environment
+conda env create -f environment.yml
+conda activate io-agent
+
+# Install the package in editable mode
 pip install -e .
 ```
 
@@ -19,7 +23,7 @@ Alternatively, you can use [apptainer](https://apptainer.org/) to build a self c
 
 This repository contains several experiments that contains comparison between IO agent and several other RL algorithms. These experiments are run on Quadrotor environment provided in [safe-control-gym](https://arxiv.org/abs/2108.06266) and [MuJoCo](https://mujoco.org/) control benchmark. In order to run these experiments, an additional installation process is required.
 
-These steps can be done by following the installation process of the listed repositories below.
+These steps can be done by following the installation process of the listed repositories below or see the `pip` section of `environment.yaml` file.
 
 - [safe-control-gym](https://github.com/utiasDSL/safe-control-gym) for the Quadrotor environment.
 - [D4RL](https://github.com/Farama-Foundation/D4RL) for offline MuJoCo control benchmark datasets.
@@ -31,27 +35,12 @@ These steps can be done by following the installation process of the listed repo
     - [jaxtyping](https://github.com/patrick-kidger/jaxtyping)
     - [optax](https://github.com/google-deepmind/optax)
 
-
 ## Examples
 
 You can find the examples under the ```examples``` folder:
 
 - `examples/quadrotor.ipynb` : experiments of Sections 4
+- `examples/mujoco/trainer.py`: run offline RL algorithms (see --help for details)
+- `examples/mujoco/fast_io_trainer.py`: run offline RL algorithms (see --help for details)
 
-The experiment directory contains jupyter-notebooks for the corresponding experiments. You can visualize the results within the notebooks.
-
-
-## Citing
-Please cite the following work if you found it useful.
-
-```bibtex
-@misc{dimanidis2025offlinereinforcementlearninginverse,
-      title={Offline Reinforcement Learning via Inverse Optimization}, 
-      author={Ioannis Dimanidis and Tolga Ok and Peyman Mohajerin Esfahani},
-      year={2025},
-      eprint={2502.20030},
-      archivePrefix={arXiv},
-      primaryClass={cs.LG},
-      url={https://arxiv.org/abs/2502.20030}, 
-}
-```
+The experiment directory contains jupyter-notebooks for the corresponding experiments.

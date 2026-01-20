@@ -118,39 +118,41 @@ class JaxIOController(IOController):
     def train(self,
               augmented_dataset: List[AugmentedTransition],
               batch_size: int,
+              steps_per_jit: int = 100,
               ) -> None:
-        states = jnp.stack(
-            [tran.aug_state for tran in augmented_dataset])
-        exp_actions = jnp.stack(
-            [tran.expert_action for tran in augmented_dataset])
+        states = jnp.asarray(np.stack([tran.aug_state for tran in augmented_dataset]))
+        exp_actions = jnp.asarray(np.stack([tran.expert_action for tran in augmented_dataset]))
 
         opt_state = self.train_optimizer.init_state(
             jax.tree_util.tree_map(jnp.zeros_like, self.theta_param),
             jnp.zeros_like(states[:1]),
             jnp.zeros_like(exp_actions[:1]))
-        step_count = 0
+
+        multi_step_fn = create_multi_step_update(self.train_optimizer)
 
         while True:
             self.key, permute_key = jrd.split(self.key, 2)
-            dataset_indices = jrd.permutation(
-                permute_key, len(augmented_dataset))
+            dataset_indices = jrd.permutation(permute_key, len(augmented_dataset))
             data_size = len(dataset_indices)
 
+            n_batches = data_size // batch_size
+            all_indices = dataset_indices[:n_batches * batch_size].reshape(n_batches, batch_size)
+
             within_epoch_losses = []
-            for index in range(0, data_size, batch_size):
-                indices = dataset_indices[index: index + batch_size]
-                param, opt_state = self.train_optimizer.update(
-                    self.theta_param,
-                    opt_state,
-                    states[indices],
-                    exp_actions[indices])
-                self.theta_param = project_theta_uu(param)
-                loss = batch_loss_fn(
-                    param, states[indices], exp_actions[indices])
+            for chunk_start in range(0, n_batches, steps_per_jit):
+                chunk_end = min(chunk_start + steps_per_jit, n_batches)
+                chunk_indices = all_indices[chunk_start:chunk_end]
+
+                batched_states = states[chunk_indices]
+                batched_actions = exp_actions[chunk_indices]
+
+                self.theta_param, opt_state, losses = multi_step_fn(
+                    self.theta_param, opt_state, batched_states, batched_actions)
+
                 self._last_lr = opt_state.stepsize.item()
-                opt_error = opt_state.error
-                within_epoch_losses.append(loss.item())
-                yield np.mean(within_epoch_losses).item()
+                # Yield once per chunk (not per step) for speed
+                within_epoch_losses.extend([l.item() for l in losses])
+                yield np.mean(within_epoch_losses).item(), len(losses)
 
             self._q_theta_uu = self.theta_param.theta_uu
             self._q_theta_su = self.theta_param.theta_su
@@ -204,6 +206,34 @@ def batch_loss_fn(param: IOParams,
     return loss_fn(param, state, exp_action).mean(axis=-1)
 
 
+# Create QP solver once at module level
+_box_qp_solver = jaxopt.BoxCDQP(jit=True)
+
+
+def create_multi_step_update(optimizer):
+    """Create a JIT-compiled function that runs multiple updates in one GPU call."""
+
+    @jax.jit
+    def multi_step_update(param, opt_state, batched_states, batched_actions):
+        """
+        batched_states: [n_steps, batch_size, state_dim]
+        batched_actions: [n_steps, batch_size, action_dim]
+        """
+        def step_fn(carry, batch_data):
+            param, opt_state = carry
+            states, actions = batch_data
+            param, opt_state = optimizer.update(param, opt_state, states, actions)
+            param = project_theta_uu(param)
+            loss = batch_loss_fn(param, states, actions)
+            return (param, opt_state), loss
+
+        (final_param, final_opt_state), losses = jax.lax.scan(
+            step_fn, (param, opt_state), (batched_states, batched_actions))
+        return final_param, final_opt_state, losses
+
+    return multi_step_update
+
+
 @jax.jit
 def minimizer_action(param: IOParams,
                      state: Float[Array, "S"],
@@ -211,14 +241,13 @@ def minimizer_action(param: IOParams,
                      box_high: float = 1.0,
                      ) -> Float[Array, "A"]:
 
-    qp = jaxopt.BoxCDQP(jit=True)
     action_size = param.theta_uu.shape[0]
     init_action = jnp.zeros(action_size)
 
     Q_matrix = param.theta_uu
     c_vector = state @ param.theta_su
 
-    sol = qp.run(init_action,
+    sol = _box_qp_solver.run(init_action,
                  params_obj=(Q_matrix, c_vector),
                  params_ineq=(jnp.ones(action_size) * box_low,
                               jnp.ones(action_size) * box_high)

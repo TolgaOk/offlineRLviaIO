@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "io_agent"
+version = "1.0.0"
+description = "Offline Reinforcement Learning via Inverse Optimization"
+readme = "README.md"
+requires-python = ">=3.10,<4.0"
+license = { text = "MIT" }
+authors = [
+  { name = "Anonymous", email = "anonymous@anonym.com" },
+]
+keywords = ["reinforcement-learning", "inverse-optimization", "control"]
+
+
+
+[tool.setuptools]
+zip-safe = false
+
+[tool.setuptools.packages.find]
+include = ["io_agent", "io_agent.*"]
+
