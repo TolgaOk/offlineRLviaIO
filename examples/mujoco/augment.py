@@ -1,12 +1,15 @@
 """Script to create augmented datasets with different feature configurations."""
 import argparse
-from io_agent.plant.mujoco import HopperEnv, Walker2dEnv, HalfCheetahEnv
+from io_agent.plant.mujoco import HopperEnv, HopperExpertEnv, HopperMediumExpertEnv, Walker2dEnv, Walker2dMediumExpertEnv, HalfCheetahEnv
 from utils import augment_mujoco_dataset
 
 registered_envs = dict(
     walker2d=Walker2dEnv,
+    walker2d_medium_expert=Walker2dMediumExpertEnv,
     hopper=HopperEnv,
-    cheetah=HalfCheetahEnv
+    cheetah=HalfCheetahEnv,
+    hopper_expert=HopperExpertEnv,
+    hopper_medium_expert=HopperMediumExpertEnv,
 )
 
 if __name__ == "__main__":
