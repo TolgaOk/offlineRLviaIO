@@ -83,6 +83,22 @@ class Walker2dEnv(MuJoCoEnv):
         super().__init__(env)
 
 
+class Walker2dExpertEnv(MuJoCoEnv):
+    task_name: str = "walker2d-expert-v2"
+
+    def __init__(self) -> None:
+        env = gym.make(self.task_name)
+        super().__init__(env)
+
+
+class Walker2dMediumExpertEnv(MuJoCoEnv):
+    task_name: str = "walker2d-medium-expert-v2"
+
+    def __init__(self) -> None:
+        env = gym.make(self.task_name)
+        super().__init__(env)
+
+
 class HalfCheetahEnv(MuJoCoEnv):
     task_name: str = "halfcheetah-medium-v2"
 
@@ -93,6 +109,22 @@ class HalfCheetahEnv(MuJoCoEnv):
 
 class HopperEnv(MuJoCoEnv):
     task_name: str = "hopper-medium-v2"
+
+    def __init__(self) -> None:
+        env = gym.make(self.task_name)
+        super().__init__(env)
+
+
+class HopperExpertEnv(MuJoCoEnv):
+    task_name: str = "hopper-expert-v2"
+
+    def __init__(self) -> None:
+        env = gym.make(self.task_name)
+        super().__init__(env)
+
+
+class HopperMediumExpertEnv(MuJoCoEnv):
+    task_name: str = "hopper-medium-expert-v2"
 
     def __init__(self) -> None:
         env = gym.make(self.task_name)
