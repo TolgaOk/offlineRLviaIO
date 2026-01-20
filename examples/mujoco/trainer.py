@@ -16,15 +16,17 @@ from io_agent.plant.mujoco import Walker2dEnv, HalfCheetahEnv, HopperEnv
 
 from cql import cql_trainer, CqlArgs
 from iql import iql_trainer, IqlArgs
-from iio import io_trainer, IOArgs
 from combo import combo_trainer, ComboArgs
+from mopo import mopo_trainer, MopoArgs
+from td3bc import td3bc_trainer, Td3bcArgs
 
 
 algorithms = dict(
     cql=dict(trainer=cql_trainer, args=CqlArgs),
     iql=dict(trainer=iql_trainer, args=IqlArgs),
-    io=dict(trainer=io_trainer, args=IOArgs),
     combo=dict(trainer=combo_trainer, args=ComboArgs),
+    mopo=dict(trainer=mopo_trainer, args=MopoArgs),
+    td3bc=dict(trainer=td3bc_trainer, args=Td3bcArgs),
 )
 
 registered_envs = dict(
@@ -39,23 +41,28 @@ def train_offline_rl(algo_name: str,
                      device: str,
                      datasize: int,
                      exp_name: str,
-                     data_path: str,
-                     lr_exp_decay: float = 0.975,
                      batch_size: int = 32,
+                     data_seed: int = None,
                      ) -> None:
     env = registered_envs[env_name]()
     alg_info = algorithms[algo_name]
 
-    args = alg_info["args"](
+    # Base args for all algorithms
+    base_args = dict(
         seed=seed,
         obs_shape=env.observation_space.shape,
         action_dim=env.action_space.shape[0],
         device=device,
         datasize=datasize,
-        data_path=data_path,
-        lr_exp_decay=lr_exp_decay,
         batch_size=batch_size,
+        data_seed=data_seed,
     )
+
+    # Add max_action for MOPO and TD3BC
+    if algo_name in ["mopo", "td3bc"]:
+        base_args["max_action"] = float(env.action_space.high[0])
+
+    args = alg_info["args"](**base_args)
 
     random.seed(args.seed)
     np.random.seed(args.seed)
@@ -81,16 +88,15 @@ def train_offline_rl(algo_name: str,
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data-path", type=str, required=True,
-                        help="Path to augmented data file (e.g., ./data/hopper/default/data.b)")
     parser.add_argument("--exp-name", type=str, default=None)
     parser.add_argument("--datasize", type=int, default=int(1e6))
     parser.add_argument("--device", type=str, default="cuda:0")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--env-name", type=str, default="hopper")
-    parser.add_argument("--algo-name", type=str, default="io")
-    parser.add_argument("--lr-exp-decay", type=float, default=0.975)
+    parser.add_argument("--algo-name", type=str, default="cql")
     parser.add_argument("--batch-size", type=int, default=32)
+    parser.add_argument("--data-seed", type=int, default=None,
+                        help="Seed for random data sampling (default: use first N samples)")
 
     args = parser.parse_args()
 
@@ -109,8 +115,7 @@ if __name__ == "__main__":
         env_name=args.env_name,
         algo_name=args.algo_name,
         exp_name=args.exp_name,
-        data_path=args.data_path,
-        lr_exp_decay=args.lr_exp_decay,
         batch_size=args.batch_size,
+        data_seed=args.data_seed,
     )
 
