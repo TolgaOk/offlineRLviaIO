@@ -16,7 +16,7 @@ from io_agent.plant.mujoco import OldSchoolWrapper
 
 
 @dataclass
-class Td3bcArgs():
+class Td3bcArgs:
     seed: int
     obs_shape: Tuple[int, ...]
     action_dim: int
@@ -30,7 +30,7 @@ class Td3bcArgs():
     policy_noise: float = 0.2
     noise_clip: float = 0.5
     update_actor_freq: int = 2
-    alpha: float = 2.5  # BC weight
+    alpha: float = 2.5
     normalize_obs: bool = True
     epoch: int = 100
     step_per_epoch: int = 10000
@@ -42,32 +42,28 @@ class Td3bcArgs():
 
 
 def td3bc_trainer(args: Td3bcArgs, env: gym.Env, logger: Logger) -> None:
-
-    # create actor
     actor_backbone = MLP(
-        input_dim=np.prod(args.obs_shape),
-        hidden_dims=args.hidden_dims
+        input_dim=np.prod(args.obs_shape), hidden_dims=args.hidden_dims
     )
-    actor = Actor(actor_backbone, args.action_dim, max_action=args.max_action, device=args.device)
+    actor = Actor(
+        actor_backbone, args.action_dim, max_action=args.max_action, device=args.device
+    )
 
-    # create critics
     critic1_backbone = MLP(
         input_dim=np.prod(args.obs_shape) + args.action_dim,
-        hidden_dims=args.hidden_dims
+        hidden_dims=args.hidden_dims,
     )
     critic2_backbone = MLP(
         input_dim=np.prod(args.obs_shape) + args.action_dim,
-        hidden_dims=args.hidden_dims
+        hidden_dims=args.hidden_dims,
     )
     critic1 = Critic(critic1_backbone, args.device)
     critic2 = Critic(critic2_backbone, args.device)
 
-    # optimizers
     actor_optim = torch.optim.Adam(actor.parameters(), lr=args.actor_lr)
     critic1_optim = torch.optim.Adam(critic1.parameters(), lr=args.critic_lr)
     critic2_optim = torch.optim.Adam(critic2.parameters(), lr=args.critic_lr)
 
-    # load dataset
     dataset = env.env.get_dataset()
     dict_dataset = {}
     keys = ("observations", "actions", "terminals", "rewards", "next_observations")
@@ -75,20 +71,20 @@ def td3bc_trainer(args: Td3bcArgs, env: gym.Env, logger: Logger) -> None:
     if args.data_seed is not None:
         data_rng = np.random.default_rng(args.data_seed)
         n_samples = min(args.datasize, len(dataset["observations"]))
-        indices = data_rng.choice(len(dataset["observations"]), size=n_samples, replace=False)
+        indices = data_rng.choice(
+            len(dataset["observations"]), size=n_samples, replace=False
+        )
         for key in keys:
             dict_dataset[key] = dataset[key][indices]
     else:
         for key in keys:
-            dict_dataset[key] = dataset[key][:args.datasize]
+            dict_dataset[key] = dataset[key][: args.datasize]
 
-    # normalize observations
     scaler = None
     if args.normalize_obs:
         scaler = StandardScaler()
         scaler.fit(dict_dataset["observations"])
 
-    # create TD3BC policy
     policy = TD3BCPolicy(
         actor,
         critic1,
@@ -103,11 +99,13 @@ def td3bc_trainer(args: Td3bcArgs, env: gym.Env, logger: Logger) -> None:
         noise_clip=args.noise_clip * args.max_action,
         update_actor_freq=args.update_actor_freq,
         alpha=args.alpha,
-        scaler=scaler
+        scaler=scaler,
     )
 
-    print("Number of parameters:", sum(param.numel()
-          for key, param in policy.named_parameters()))
+    print(
+        "Number of parameters:",
+        sum(param.numel() for key, param in policy.named_parameters()),
+    )
 
     buffer = ReplayBuffer(
         buffer_size=len(dict_dataset["observations"]),
@@ -115,11 +113,10 @@ def td3bc_trainer(args: Td3bcArgs, env: gym.Env, logger: Logger) -> None:
         obs_dtype=np.float32,
         action_dim=args.action_dim,
         action_dtype=np.float32,
-        device=args.device
+        device=args.device,
     )
     buffer.load_dataset(dict_dataset)
 
-    # create policy trainer
     policy_trainer = MFPolicyTrainer(
         policy=policy,
         eval_env=OldSchoolWrapper(env),
@@ -128,6 +125,6 @@ def td3bc_trainer(args: Td3bcArgs, env: gym.Env, logger: Logger) -> None:
         epoch=args.epoch,
         step_per_epoch=args.step_per_epoch,
         batch_size=args.batch_size,
-        eval_episodes=args.eval_episodes
+        eval_episodes=args.eval_episodes,
     )
     policy_trainer.train()

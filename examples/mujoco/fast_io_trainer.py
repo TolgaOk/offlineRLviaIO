@@ -1,4 +1,5 @@
 """Fast IO trainer with on-the-fly augmentation matching FeatureHandler."""
+/039/󰌠 /fast_io_trainer.py
 
 from typing import Tuple, Optional
 import numpy as np
@@ -70,12 +71,11 @@ class FastIOArgs:
     learning_rate: float = 5e-2
     lr_exp_decay: float = 0.975
     seq_len: int = 64
-    batch_size: int = 32  # Match iio.py default
+    batch_size: int = 32
     step_per_epoch: int = 10000
     datasize: int = int(1e6)
     epoch: int = 100
     eval_episodes: int = 40
-    # Augmenter config (matching rff1024 FeatureHandler)
     n_past: int = 4
     scale_factor: float = 1.0
     add_bias: bool = True
@@ -93,7 +93,7 @@ class FastIOArgs:
     rbf_sigma: float = 0.1
     norm_momentum: float = 0.0
     use_adam: bool = False
-    top_return_pct: float = 1.0  # 1.0 = use all, 0.1 = top 10%
+    top_return_pct: float = 1.0
     device: Optional[str] = "cpu"
     data_seed: Optional[int] = None
 

@@ -23,7 +23,7 @@ Alternatively, you can use [apptainer](https://apptainer.org/) to build a self c
 
 This repository contains several experiments that contains comparison between IO agent and several other RL algorithms. These experiments are run on Quadrotor environment provided in [safe-control-gym](https://arxiv.org/abs/2108.06266) and [MuJoCo](https://mujoco.org/) control benchmark. In order to run these experiments, an additional installation process is required.
 
-These steps can be done by following the installation process of the listed repositories below.
+These steps can be done by following the installation process of the listed repositories below or see the `pip` section of `environment.yaml` file.
 
 - [safe-control-gym](https://github.com/utiasDSL/safe-control-gym) for the Quadrotor environment.
 - [D4RL](https://github.com/Farama-Foundation/D4RL) for offline MuJoCo control benchmark datasets.
@@ -40,5 +40,7 @@ These steps can be done by following the installation process of the listed repo
 You can find the examples under the ```examples``` folder:
 
 - `examples/quadrotor.ipynb` : experiments of Sections 4
+- `examples/mujoco/trainer.py`: run offline RL algorithms (see --help for details)
+- `examples/mujoco/fast_io_trainer.py`: run offline RL algorithms (see --help for details)
 
-The experiment directory contains jupyter-notebooks for the corresponding experiments. You can visualize the results within the notebooks
+The experiment directory contains jupyter-notebooks for the corresponding experiments.
