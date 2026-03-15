@@ -10,7 +10,9 @@ readme = "README.md"
 requires-python = ">=3.10,<4.0"
 license = { text = "MIT" }
 authors = [
-  { name = "Anonymous", email = "anonymous@anonym.com" },
+  { name = "Ioannis Dimanidis", email = "ioanndima@gmail.com" },
+  { name = "Tolga Ok", email = "T.Ok@tudelft.nl" },
+  { name = "Peyman Mohajerin Esfahani", email = "P.MohajerinEsfahani@tudelft.nl" },
 ]
 keywords = ["reinforcement-learning", "inverse-optimization", "control"]
 

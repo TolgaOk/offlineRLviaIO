@@ -1,5 +1,4 @@
 """Fast IO trainer with on-the-fly augmentation matching FeatureHandler."""
-/039/󰌠 /fast_io_trainer.py
 
 from typing import Tuple, Optional
 import numpy as np
@@ -19,7 +18,7 @@ import gym
 
 from offlinerlkit.utils.logger import Logger
 from io_agent.control.fast_io import Augmenter, io_init, train_epoch
-from io_agent.control.fast_eval import evaluate, _make_eval_fns, run_episode
+from io_agent.control.fast_eval import _make_eval_fns, run_episode
 
 
 def filter_top_trajectories(dataset: dict, top_pct: float = 0.1) -> np.ndarray:
@@ -42,10 +41,9 @@ def filter_top_trajectories(dataset: dict, top_pct: float = 0.1) -> np.ndarray:
     traj_starts = np.concatenate([[0], traj_ends[:-1] + 1])
 
     # Calculate return per trajectory
-    traj_returns = np.array([
-        rewards[start:end+1].sum()
-        for start, end in zip(traj_starts, traj_ends)
-    ])
+    traj_returns = np.array(
+        [rewards[start : end + 1].sum() for start, end in zip(traj_starts, traj_ends)]
+    )
 
     # Find threshold for top percentile
     threshold = np.percentile(traj_returns, (1 - top_pct) * 100)
@@ -57,8 +55,12 @@ def filter_top_trajectories(dataset: dict, top_pct: float = 0.1) -> np.ndarray:
         if top_mask[i]:
             indices.extend(range(start, end + 1))
 
-    print(f"Top {top_pct*100:.0f}% filter: {top_mask.sum()}/{len(traj_returns)} trajs, {len(indices)} samples")
-    print(f"Return threshold: {threshold:.1f}, range: [{traj_returns[top_mask].min():.1f}, {traj_returns.max():.1f}]")
+    print(
+        f"Top {top_pct * 100:.0f}% filter: {top_mask.sum()}/{len(traj_returns)} trajs, {len(indices)} samples"
+    )
+    print(
+        f"Return threshold: {threshold:.1f}, range: [{traj_returns[top_mask].min():.1f}, {traj_returns.max():.1f}]"
+    )
 
     return np.array(indices)
 
@@ -176,8 +178,17 @@ def fast_io_trainer(args: FastIOArgs, env: gym.Env, logger: Logger) -> None:
 
     @jax.jit
     def train_step(io_state):
-        return train_epoch(io_state, obs, actions, dones, augmenter, optimizer,
-                           args.seq_len, args.batch_size, args.step_per_epoch)
+        return train_epoch(
+            io_state,
+            obs,
+            actions,
+            dones,
+            augmenter,
+            optimizer,
+            args.seq_len,
+            args.batch_size,
+            args.step_per_epoch,
+        )
 
     # Pre-compile eval functions
     augment_obs, update_history, get_action = _make_eval_fns(augmenter)
@@ -192,10 +203,21 @@ def fast_io_trainer(args: FastIOArgs, env: gym.Env, logger: Logger) -> None:
         train_time = time.time() - t0
 
         t0 = time.time()
-        rewards = np.array([
-            run_episode(io_state.theta_su, env, int(s), augmenter, io_state.norm_state, augment_obs, update_history, get_action)
-            for s in trial_seeds
-        ])
+        rewards = np.array(
+            [
+                run_episode(
+                    io_state.theta_su,
+                    env,
+                    int(s),
+                    augmenter,
+                    io_state.norm_state,
+                    augment_obs,
+                    update_history,
+                    get_action,
+                )
+                for s in trial_seeds
+            ]
+        )
         eval_time = time.time() - t0
 
         mean_r = env.env.get_normalized_score(np.mean(rewards)) * 100
@@ -205,7 +227,10 @@ def fast_io_trainer(args: FastIOArgs, env: gym.Env, logger: Logger) -> None:
         logger.logkv("train/loss", float(loss))
         logger.logkv("train/train_time", train_time)
         logger.logkv("train/eval_time", eval_time)
-        logger.logkv("train/fps", ((epoch + 1) * args.step_per_epoch) / (time.time() - start_time))
+        logger.logkv(
+            "train/fps",
+            ((epoch + 1) * args.step_per_epoch) / (time.time() - start_time),
+        )
         logger.logkv("eval/normalized_episode_reward", mean_r)
         logger.logkv("eval/normalized_episode_std", std_r)
         logger.logkv("eval/normalized_episode_median", median_r)
@@ -248,9 +273,25 @@ def fast_io_trainer(args: FastIOArgs, env: gym.Env, logger: Logger) -> None:
 if __name__ == "__main__":
     import argparse
     import datetime
-    from io_agent.plant.mujoco import HopperEnv, HopperExpertEnv, HopperMediumExpertEnv, Walker2dEnv, Walker2dExpertEnv, Walker2dMediumExpertEnv, HalfCheetahEnv
+    from io_agent.plant.mujoco import (
+        HopperEnv,
+        HopperExpertEnv,
+        HopperMediumExpertEnv,
+        Walker2dEnv,
+        Walker2dExpertEnv,
+        Walker2dMediumExpertEnv,
+        HalfCheetahEnv,
+    )
 
-    ENVS = {"hopper": HopperEnv, "hopper-expert": HopperExpertEnv, "hopper-medium-expert": HopperMediumExpertEnv, "walker2d": Walker2dEnv, "walker2d-expert": Walker2dExpertEnv, "walker2d-medium-expert": Walker2dMediumExpertEnv, "cheetah": HalfCheetahEnv}
+    ENVS = {
+        "hopper": HopperEnv,
+        "hopper-expert": HopperExpertEnv,
+        "hopper-medium-expert": HopperMediumExpertEnv,
+        "walker2d": Walker2dEnv,
+        "walker2d-expert": Walker2dExpertEnv,
+        "walker2d-medium-expert": Walker2dMediumExpertEnv,
+        "cheetah": HalfCheetahEnv,
+    }
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--exp-name", type=str, default="fast_io_test")
@@ -267,18 +308,40 @@ if __name__ == "__main__":
     parser.add_argument("--rff-n-features", type=int, default=1024)
     parser.add_argument("--rff-sigma", type=float, default=0.1)
     parser.add_argument("--no-rff", action="store_true", help="Disable RFF features")
-    parser.add_argument("--no-co-product", action="store_true", help="Disable co_product features")
-    parser.add_argument("--no-sinusoidal", action="store_true", help="Disable sinusoidal features")
-    parser.add_argument("--sin-freqs", type=float, nargs="+", default=[1.0, 2.0, 4.0, 8.0], help="Sinusoidal frequencies")
+    parser.add_argument(
+        "--no-co-product", action="store_true", help="Disable co_product features"
+    )
+    parser.add_argument(
+        "--no-sinusoidal", action="store_true", help="Disable sinusoidal features"
+    )
+    parser.add_argument(
+        "--sin-freqs",
+        type=float,
+        nargs="+",
+        default=[1.0, 2.0, 4.0, 8.0],
+        help="Sinusoidal frequencies",
+    )
     parser.add_argument("--use-rbf", action="store_true", help="Enable RBF features")
     parser.add_argument("--rbf-n-features", type=int, default=1024)
     parser.add_argument("--rbf-sigma", type=float, default=0.1)
     parser.add_argument("--norm-momentum", type=float, default=0.0)
-    parser.add_argument("--use-adam", action="store_true", help="Use Adam optimizer instead of SGD")
-    parser.add_argument("--top-return-pct", type=float, default=1.0, help="Use top X%% trajectories by return (e.g., 0.1 for top 10%%)")
+    parser.add_argument(
+        "--use-adam", action="store_true", help="Use Adam optimizer instead of SGD"
+    )
+    parser.add_argument(
+        "--top-return-pct",
+        type=float,
+        default=1.0,
+        help="Use top X%% trajectories by return (e.g., 0.1 for top 10%%)",
+    )
     parser.add_argument("--eval-episodes", type=int, default=40)
     parser.add_argument("--device", type=str, default="cpu")
-    parser.add_argument("--data-seed", type=int, default=None, help="Seed for random data sampling (default: use first N samples)")
+    parser.add_argument(
+        "--data-seed",
+        type=int,
+        default=None,
+        help="Seed for random data sampling (default: use first N samples)",
+    )
     args = parser.parse_args()
 
     env = ENVS[args.env_name]()
