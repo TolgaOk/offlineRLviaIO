@@ -1,12 +1,14 @@
 # Offline Reinforcement Learning via Inverse Optimization
 
-This repository provides the source code of the  experiments and implementation of the algorithms proposed in the paper.
+[![arXiv](https://img.shields.io/badge/arXiv-2502.20030-b31b1b.svg)](https://arxiv.org/abs/2502.20030)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
+
+Official implementation of the paper "Offline Reinforcement Learning via Inverse Optimization".
 
 ## Installation
 
-To run the provided examples you will need to install [MOSEK](https://docs.mosek.com/10.0/install/installation.html) along with the MOSEK license. MOSEK provides free academic [license](https://www.mosek.com/products/academic-licenses/).
-
-Once the MOSEK installation is completed you can install the required packages and the research package using conda.
+This project uses [MOSEK](https://www.mosek.com/) for optimization. You will need a MOSEK [license](https://www.mosek.com/products/academic-licenses/) (free for academic use).
 
 ```bash
 # Create and activate conda environment
@@ -17,30 +19,35 @@ conda activate io-agent
 pip install -e .
 ```
 
-Alternatively, you can use [apptainer](https://apptainer.org/) to build a self contained image using the ```image.def``` file. Run ```start.sh --build``` to build a apptainer image and run ```start.sh --run``` to start a container running vs-code server.
+### Dependencies
 
-### Additional packages
-
-This repository contains several experiments that contains comparison between IO agent and several other RL algorithms. These experiments are run on Quadrotor environment provided in [safe-control-gym](https://arxiv.org/abs/2108.06266) and [MuJoCo](https://mujoco.org/) control benchmark. In order to run these experiments, an additional installation process is required.
-
-These steps can be done by following the installation process of the listed repositories below or see the `pip` section of `environment.yaml` file.
+The conda environment includes all dependencies needed for the experiments. The following external packages are installed automatically via `environment.yml`:
 
 - [safe-control-gym](https://github.com/utiasDSL/safe-control-gym) for the Quadrotor environment.
 - [D4RL](https://github.com/Farama-Foundation/D4RL) for offline MuJoCo control benchmark datasets.
-- [OfflineRL-Kit](https://github.com/yihaosun1124/OfflineRL-Kit/tree/main) for the offline RL agent.
+- [OfflineRL-Kit](https://github.com/yihaosun1124/OfflineRL-Kit/tree/main) for the offline RL agents.
 - [Stable Baselines3](https://stable-baselines3.readthedocs.io/en/master/guide/install.html) for the PPO agent.
-- For the iterative IO agent:
-    - [jax](https://github.com/google/jax)
-    - [jaxopt](https://github.com/google/jaxopt) 
-    - [jaxtyping](https://github.com/patrick-kidger/jaxtyping)
-    - [optax](https://github.com/google-deepmind/optax)
+- [JAX](https://github.com/google/jax), [jaxopt](https://github.com/google/jaxopt), [jaxtyping](https://github.com/patrick-kidger/jaxtyping), [optax](https://github.com/google-deepmind/optax) for the iterative IO agent.
 
-## Examples
+## Experiments
 
-You can find the examples under the ```examples``` folder:
+You can find the examples under the `examples` folder:
 
-- `examples/quadrotor.ipynb` : experiments of Sections 4
-- `examples/mujoco/trainer.py`: run offline RL algorithms (see --help for details)
-- `examples/mujoco/fast_io_trainer.py`: run offline RL algorithms (see --help for details)
+- `examples/quadrotor.ipynb`: Quadrotor experiments
+- `examples/dualheater.ipynb`: Dual heater experiments
+- `examples/fighter.ipynb`: Fighter experiments
+- `examples/mujoco/trainer.py`: run offline RL algorithms (see `--help` for details)
+- `examples/mujoco/fast_io_trainer.py`: run iterative IO algorithm (see `--help` for details)
 
-The experiment directory contains jupyter-notebooks for the corresponding experiments.
+## Citation
+
+If you find this work useful, please cite:
+
+```bibtex
+@article{Dimanidis2025,
+  title={Offline Reinforcement Learning via Inverse Optimization},
+  author={Dimanidis, Ioannis and Ok, Tolga and Esfahani, Peyman Mohajerin},
+  journal={arXiv preprint arXiv:2502.20030},
+  year={2025}
+}
+```
